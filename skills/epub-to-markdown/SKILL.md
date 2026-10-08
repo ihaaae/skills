@@ -26,13 +26,15 @@ description: 把 ePub 电子书转成单个给 Agent 读的 Markdown 文件（�
 
 - YAML front matter：`title`、`authors`、`language`、`source`、`lines`（总行数）和 `toc`。
 - `toc` 每项是 `[行号, 标题级别, 标题]`，行号是输出文件里的绝对行号。一节的范围是从它的行号到下一项的行号。
-- 标题：源文件有 `<h1>`–`<h6>` 时直接使用；没有时（calibre / Kindle 转出来的书常见），把书自带导航（EPUB3 nav 或 EPUB2 NCX）指向的段落提升为标题，级别取导航的层级。
-- 代码块一律是围栏代码块，语言取自源文件的 `language-xxx` / `lang-xxx` class；源文件没标语言的记为 `text`。
+- 标题：源文件有 `<h1>`–`<h6>` 时直接使用；章节用嵌套 `<section>` / `data-type="chapter|sect1|…"` 表达层级、标签却一律是 `<h1>` 的书（O'Reilly HTMLBook 常见），按嵌套深度把标题降到正确级别（只降不升）。没有标题标签时（calibre / Kindle 转出来的书常见），把书自带导航（EPUB3 nav 或 EPUB2 NCX）指向的段落提升为标题，级别取导航的层级。
+- 代码块一律是围栏代码块，语言取自源文件的 `data-code-language` 属性或 `language-xxx` / `lang-xxx` class；源文件没标语言的记为 `text`。
 - 没有 `<pre>` 的书：每一行都以 `<tt>` / `<code>` 开头的段落会被识别为代码清单，转成 `text` 代码块，不间断空格还原成普通空格并去掉公共缩进；行首的 `?` 之类的页边标记原样保留。
 - class 为 `bold` / `italic` 的 span 转成粗体 / 斜体。
 - 公式是 `$...$` 和 `$$...$$`（由 MathML 转成 TeX）。
-- 提示框（note / tip / warning 等）变成 `> **Note:** ...` 引用块。
+- 提示框和侧栏（note / tip / warning / sidebar，按 class、`data-type` 或 `epub:type` 识别）变成 `> **Note:** ...` 引用块；框内自带的小标题并入这个标签，不再单独成为标题。
+- 例子、插图的标题（“Example 2-1. …”、“Figure 1-1. …”）变成粗体段落，不进标题和目录。
 - 书内交叉引用改写成 `[文字](#slug)`，slug 是目标所在标题的 GitHub 风格锚点（小写、去掉 ASCII 标点、空格换成 `-`）；找不到目标的链接只保留文字；不解压图片时，指向纯图片页的链接（如 “Click here to view code image”）整个删除。
+- 书末索引里指向同一节的重复链接（`[A](#a)-[A](#a)`、`, [A](#a), [A](#a)`）合并成一个。
 - 表格是紧凑的管道表格；其余原始 HTML 全部丢弃。
 
 ## 读取转换结果

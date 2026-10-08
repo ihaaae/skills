@@ -69,11 +69,41 @@ baseline 的问题：
 
 这一轮的改动让 Pro Git 的输出逐字节不变；两本书在 pandoc 3.1.3 和 3.8 上都通过回归。
 
+## 3. Learning Go 第 2 版（第三轮，2026-10-08）
+
+源：O'Reilly HTMLBook，16 章 + 序言 + 索引。`<section data-type="chapter|sect1|sect2|sect3">` 嵌套，但章和 sect1 的标题都是 `<h1>`（sect2 是 `<h2>`，sect3 是 `<h3>`）；代码是 `<pre data-type="programlisting" data-code-language="go">`（618 个有语言，199 个是 shell 输出没有）；提示框是 `<div data-type="note|tip|warning">` 加 `<h6>Note</h6>`；侧栏是 `<aside data-type="sidebar"><div class="sidebar"><h1>…`；例子和插图的标题是 `<h5>` / `<h6>`；书末索引有约 3000 个指向 indexterm 锚点的链接。
+
+改之前 skill 在这本书上的问题：
+- 代码语言 13/827：pandoc 把 `data-code-language` 变成属性 `code-language`，脚本只看 class。
+- 层级拍平：章和 sect1 都是 1 级，目录 326 条、混在一起。
+- 770 个死链：提示框里的 `###### Note`、侧栏标题被 pass 1 当成节，索引锚点挂到了 “Note” 上；而这些标题最终在引用块里（`> ###### Note`），slug 计数和正文对不上。
+- 侧栏变成两层引用（`> >`）；“Example 2-1.” 之类的标题占了 52 个 5 级标题。
+
+改进：
+1. CodeBlock 先看 `data-code-language` / `code-language` / `data-lang` / `lang` 属性 → 628/827。
+2. pass 0 `relevel`：按 section 类容器（class `section` 或 `data-type`/`epub:type` 为 chapter、sect1… 等）的嵌套深度定级别。第一版直接覆盖级别，Pro Git 的 sect1（`<h2>`，外面没有可计数的章容器）被升成 1 级 → 改成只降不升。
+3. 提示框 / 侧栏 / 例子 / 插图（按 class、`data-type`、`epub:type` 识别）在 pass 1 里整体跳过，内部 id 归到外层节；raw `<aside>` 对之间的标题同样跳过。框内首个标题并入 `**Note:**` 标签（标签已包含标题文字时直接丢掉），例子/插图标题改成粗体段落。
+4. 后处理合并索引里的重复链接。
+
+| file | bytes | est_tok | toc | headings | fences | lang | nbsp | inline | links | dead | html | images |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| bfb.md | 977329 | 271481 | 25 | 637 | 823 | 0 | 0 | 4156 | 3171 | 240 | 0 | 2 |
+| markitdown.md | 1078502 | 299585 | 0 | 638 | 827 | 0 | 162 | 4154 | 3273 | 3272 | 6 | 20 |
+| pandoc.md | 1083642 | 301013 | 0 | 637 | 827 | 14 | 184 | 4164 | 3273 | 3273 | 28 | 23 |
+| skill.md（改前） | 1115024 | 309730 | 326 | 473 | 827 | 13 | 192 | 4164 | 3263 | 770 | 0 | 17 |
+| skill.md（改后） | 1098368 | 305103 | 195 | 363 | 827 | 628 | 208 | 4164 | 2974 | 0 | 0 | 17 |
+
+（headings 比 baseline 少是有意的：187 个提示框标题和 52 个例子标题不再是标题。toc 195 条 = 章 + sect1，层级 1/2/3/4 分别是 26/171/155/13 个标题。体积比 pandoc 多 1.4%，主要是 toc；索引从 224 KB 降到 184 KB。）
+
+对 Pro Git 的影响：正文只少了 19 处 `> ## 标题`——`<aside title="Note: X">` 里重复的 X 标题，toc、链接不变。TPOP 手头没有，没能重跑；它没有 `<section>`、提示框也不是这些 class，预计不受影响，但 golden 行未经本轮验证。三本书中可得的两本在 pandoc 3.1.3 和 3.8 上都通过 `check.py` 和回归。
+
 ## 已知缺陷 / 下一步
 
 - TPOP 的 453 个代码块全是 `text`：源里没有语言信息。可以考虑按内容猜（C / Java / awk / Perl），但误判代价不小。
 - TPOP 385 张图全部没有 alt，默认丢弃；其中约 25 张是真插图。可以考虑：不解压时把无 alt 的插图保留成占位符（`[图: 文件名]`），纯图片页仍丢弃。
 - 代码段落识别只抽查过若干处，没有逐个核对 453 个块。
+- Learning Go 剩下 199 个 `text` 块是 shell 命令和输出（源里没标语言），可以考虑把以 `$ ` 开头的块标成 `console`。
+- 两个脚注被渲染成 `^([1](#节))`，能读但不好看。
 - 导航提升标题只处理 `<p>`；`<div>` 或 `<span>` 充当标题的书还没遇到。
 - 公式需要一本真实的 MathML 书来验证；公式是图片的书无解。
 - 只输出单文件；需要时可以加 `--split` 按章写多个文件（跨文件锚点要重写）。

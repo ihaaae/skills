@@ -33,11 +33,12 @@ out/                     bench 输出（不进 git）
 1. `metadata()`：从 OPF 读 title / authors / language，检查 DRM。
 2. `promote_headings()`：书里没有 `<h1>`–`<h6>` 时，用导航（EPUB3 nav 优先，退回 EPUB2 NCX）把目标 `<p>` 改成 `<hN>`，写一份临时 epub 交给 pandoc。只改「整个文件没有标题标签」的 spine 文件，且段落文本必须和导航标题互相包含、长度 ≤ 200。
 3. pandoc：`-f epub -t gfm-raw_html+tex_math_dollars --wrap=none`，新版 pandoc 再加 `-tex_math_gfm`。
-4. Lua filter（三遍）：
-   - pass 1，按文档顺序：记录每个元素 id 属于哪个标题（slug），以及哪些 spine 文件有文字。
-   - pass 2：代码块语言、`<tt>` 段落 → 代码块、`<aside>`/提示框 → 引用块、交叉链接改写成 `#slug`、bold/italic class → 强调、嵌套引用压平、无 alt 图片丢弃。
+4. Lua filter（四遍）：
+   - pass 0：按 `<section>` / `data-type` 章节的嵌套深度重定标题级别（只降不升；`<section>` 和紧挨着的 `<div class="sect1">` 只算一层）。
+   - pass 1，按文档顺序：记录每个元素 id 属于哪个标题（slug），以及哪些 spine 文件有文字。提示框、侧栏、例子、插图里的标题不算节，里面的 id 归到外层的节。
+   - pass 2：代码块语言（`data-code-language` 属性或 class）、`<tt>` 段落 → 代码块、`<aside>`/提示框/侧栏 → 引用块（框内标题并入标签）、例子/插图标题 → 粗体段落、交叉链接改写成 `#slug`、bold/italic class → 强调、嵌套引用压平、无 alt 图片丢弃。
    - pass 3：删掉所有残留的 raw HTML 和空段落。
-5. `postprocess()`：压缩表格、合并空行、统计、收集标题；`front_matter()` 计算行号偏移。
+5. `postprocess()`：压缩表格、合并空行、合并索引里的重复链接、统计、收集标题；`front_matter()` 计算行号偏移。
 
 ## 改动时的规则
 
@@ -45,7 +46,7 @@ out/                     bench 输出（不进 git）
 - 改动要对 pandoc 3.1.x 和 3.8+ 都成立：两者的 id 命名不同（`file.xhtml#frag` vs `file.xhtml_frag`），数学默认输出也不同。用 `PATH=/path/to/other/pandoc/bin:$PATH bench/regress.sh` 验证另一个版本。
 - `bench/check.py` 对我们的输出必须全部 ok。
 - 启发式规则（代码段落识别、导航提升标题）宁可漏判也不要误判：误判会把正文变成代码或标题，比漏判更伤。
-- 参考书：Pro Git 中文版（有 `<pre class="language-*">`、`<aside>`、表格、大量交叉引用）和 The Practice of Programming（calibre 转换：无标题标签、代码是 `<tt>`+`<br>`、不间断空格缩进、纯图片页）。书本身不在仓库里，sha256 见 `bench/golden.tsv`。
+- 参考书：Pro Git 中文版（有 `<pre class="language-*">`、`<aside>`、表格、大量交叉引用；可从 progit2-zh 的 GitHub release 下载 `progit.epub`）、The Practice of Programming（calibre 转换：无标题标签、代码是 `<tt>`+`<br>`、不间断空格缩进、纯图片页）和 Learning Go 第 2 版（O'Reilly HTMLBook：所有层级都用 `<h1>`、`data-code-language`、`data-type` 提示框、书末索引）。书本身不在仓库里，sha256 见 `bench/golden.tsv`。
 
 ## 已知缺陷 / 下一步
 

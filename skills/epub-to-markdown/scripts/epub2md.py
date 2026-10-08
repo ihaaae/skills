@@ -18,7 +18,25 @@ local NOISE = {source=1, sourcecode=1, screen=1, programlisting=1, highlight=1,
   code=1, pre=1, literal=1, listing=1, listingblock=1, hljs=1, prettyprint=1,
   numberlines=1, numbersource=1, linenums=1}
 local ADMON = {admonition=1, note=1, tip=1, warning=1, caution=1, important=1, sidebar=1}
+-- boxes whose own heading is a caption, not a section of the book
+local CAPTIONED = {example=1, figure=1, table=1}
 local stringify = pandoc.utils.stringify
+
+-- HTMLBook / EPUB3 semantics survive as data-type / epub:type attributes
+local function kinds(el)
+  local out = {}
+  for _, c in ipairs(el.classes) do out[c:lower()] = true end
+  for _, k in ipairs({"data-type", "type", "epub:type"}) do
+    for w in (el.attributes[k] or ""):gmatch("%S+") do out[w:lower()] = true end
+  end
+  return out
+end
+
+local function has_kind(el, set)
+  if el.t ~= "Div" then return false end
+  for k in pairs(kinds(el)) do if set[k] then return true end end
+  return false
+end
 
 -- pass 1 (document order): map every element id to the slug of its enclosing heading
 local id2slug, used, cur, pending = {}, {}, nil, {}
@@ -43,10 +61,60 @@ local function leads_with_header(el)
   return el.t == "Header"
 end
 
+-- pass 0: books such as O'Reilly's HTMLBook use <h1> for every level and
+-- encode the hierarchy as nested sections; take a heading's level from the
+-- number of enclosing sections that open with a heading (only ever deeper than
+-- the tag says, never shallower). A <section> and the
+-- <div class="sect1"> right inside it count once (`chain`).
+local SECTION = {section=1, part=1, chapter=1, preface=1, appendix=1, foreword=1,
+  introduction=1, afterword=1, sect1=1, sect2=1, sect3=1, sect4=1, sect5=1}
+
+local function leading_header(el)
+  while el.t == "Div" and #el.content > 0 do el = el.content[1] end
+  if el.t == "Header" then return el end
+end
+
+local function relevel(blocks, depth, chain)
+  for i, b in ipairs(blocks) do
+    if b.t == "Div" and not has_kind(b, ADMON) and not has_kind(b, CAPTIONED) then
+      local link = chain and i == 1
+      local h = has_kind(b, SECTION) and leading_header(b)
+      if h and not link then
+        relevel(b.content, depth + 1, true)
+        h.level = math.min(math.max(h.level, depth + 1), 6)
+      else
+        relevel(b.content, depth, link)
+      end
+    end
+  end
+end
+
+local aside = 0
 local function record(el)
+  -- headings inside a raw <aside> pair are box titles, not sections
+  if el.t == "RawBlock" and el.format == "html" then
+    if el.text:match("^<aside[%s>]") then aside = aside + 1
+    elseif el.text:match("^</aside>") and aside > 0 then aside = aside - 1 end
+  end
+  if el.t == "Header" and aside > 0 then return nil end
   if el.t == "Str" then
     if curfile then hastext[curfile] = true end
     return nil
+  end
+  -- a note, sidebar or captioned example is not a section: its own heading is
+  -- not a link target, and ids inside it belong to the surrounding section
+  if has_kind(el, ADMON) or has_kind(el, CAPTIONED) then
+    if curfile then hastext[curfile] = true end
+    local function grab(x)
+      local ok, id = pcall(function() return x.identifier end)
+      if ok and id and id ~= "" then
+        id = canon(id)
+        if cur then id2slug[id] = cur else pending[#pending + 1] = id end
+      end
+    end
+    grab(el)
+    el:walk({Block = grab, Inline = grab})
+    return nil, false
   end
   if el.t == "Header" then
     cur = slugify(stringify(el.content))
@@ -72,6 +140,18 @@ local function capitalize(s) return (s:gsub("^%l", string.upper)) end
 
 local function admon_quote(blocks, title)
   while #blocks == 1 and blocks[1].t == "Div" do blocks = blocks[1].content end
+  -- <aside><div class="sidebar">: the inner box is already a quote
+  if #blocks == 1 and blocks[1].t == "BlockQuote" and not title then return blocks[1] end
+  -- the box's own heading ("Note", or a sidebar's title) becomes its label
+  if blocks[1] and blocks[1].t == "Header" then
+    local h = stringify(blocks[1].content)
+    blocks = pandoc.List({table.unpack(blocks, 2)})
+    if not title or title == "" then
+      title = h
+    elseif not title:lower():find(h:lower(), 1, true) then
+      title = title .. ": " .. h
+    end
+  end
   if title and title ~= "" then
     local label = pandoc.Strong{pandoc.Str(title .. ":")}
     local first = blocks[1]
@@ -88,7 +168,7 @@ end
 local function class_title(classes)
   for _, c in ipairs(classes) do
     local k = c:lower()
-    if ADMON[k] and k ~= "admonition" then return capitalize(k) end
+    if ADMON[k] and k ~= "admonition" and k ~= "sidebar" then return capitalize(k) end
   end
   return nil
 end
@@ -177,16 +257,27 @@ local clean = {
   end,
 
   Div = function(el)
-    for _, c in ipairs(el.classes) do
-      if ADMON[c:lower()] then
-        return admon_quote(el.content, el.attributes.title or class_title(el.classes))
-      end
+    if has_kind(el, ADMON) then
+      local list = {}
+      for k in pairs(kinds(el)) do list[#list + 1] = k end
+      table.sort(list)
+      return admon_quote(el.content, el.attributes.title or class_title(list))
+    end
+    -- "Example 2-1. ..." / "Figure 1-1. ..." captions: bold text, not headings
+    if has_kind(el, CAPTIONED) then
+      return el.content:walk({
+        Header = function(h) return pandoc.Para{pandoc.Strong(h.content)} end,
+      })
     end
   end,
 
   CodeBlock = function(el)
     local lang
-    for _, c in ipairs(el.classes) do
+    for _, k in ipairs({"data-code-language", "code-language", "data-lang", "lang", "language"}) do
+      local v = el.attributes[k]
+      if v and v:match("^[%w+#.-]+$") then lang = v break end
+    end
+    for _, c in ipairs(lang and {} or el.classes) do
       local m = c:match("^language%-(.+)$") or c:match("^lang%-(.+)$")
       if m then lang = m break end
     end
@@ -253,6 +344,7 @@ local strip = {
 }
 
 function Pandoc(doc)
+  relevel(doc.blocks, 0, false)
   doc:walk({traverse = "topdown", Block = record, Inline = record})
   doc = doc:walk(clean):walk(strip)
   io.stderr:write("epub2md:images_dropped=" .. dropped .. "\n")
@@ -268,6 +360,9 @@ CELL_SPLIT = re.compile(r"(?<!\\)\|")
 INLINE_CODE = re.compile(r"`+[^`]*`+")
 IMAGE = re.compile(r"!\[[^\]]*\]\(")
 MATH = re.compile(r"\$\$|(?<![\\$\w])\$[^$\s](?:[^$]*[^$\s])?\$(?![\w$])")
+# a back-of-book index points at many anchors inside one section; once every
+# anchor is rewritten to its section, "[A](#a)-[A](#a)" and repeats are noise
+LOCATOR = re.compile(r"\[[^\]]*\]\(#[^)\s]*\)")
 HTML_TAG = re.compile(r"</?(?:div|span|aside|section|figure|table|tr|td|th|img|math|svg|p|a|pre|code)\b[^>]*>")
 
 
@@ -422,6 +517,20 @@ def run_pandoc(src, media):
         return r.stdout.decode("utf8"), extra
 
 
+def dedupe_locators(line):
+    if line.count("](#") < 2:
+        return line
+    line = re.sub(r"(%s)[-–]\1(?!\w)" % LOCATOR.pattern, r"\1", line)
+    seen = set()
+
+    def once(m):
+        if m.group(1) in seen:
+            return ""
+        seen.add(m.group(1))
+        return m.group(0)
+    return re.sub(r", (%s)(?=,|$)" % LOCATOR.pattern, once, line)
+
+
 def compact_row(line):
     cells = CELL_SPLIT.split(line.strip())
     if len(cells) < 3 or cells[0].strip() or cells[-1].strip():
@@ -465,6 +574,7 @@ def postprocess(text, depth):
             stats["tables"] += new.startswith("|-") or new.startswith("|:")
             line = new
         else:
+            line = dedupe_locators(line)
             h = HEADING.match(line)
             if h and len(h.group(1)) <= depth:
                 toc.append((len(out) + 1, len(h.group(1)), h.group(2)))

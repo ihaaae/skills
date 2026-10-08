@@ -24,8 +24,7 @@ bench/
   regress.sh             回归测试：按 epub 的 sha256 匹配参考书，比对输出哈希
   golden.tsv             参考输出哈希：epub sha256 / 标签 / pandoc 版本 / 输出 sha256
 docs/experiments.md      完整实验记录、对比数据、发现的 bug 和已知缺陷
-books/                   放测试用的 .epub；只有允许再分发的 progit.epub 进 git（见 books/README.md）
-samples/progit.md        Pro Git 的转换结果样例（pandoc 3.1.3）
+books/                   放测试用的 .epub（不进 git）
 out/                     bench 输出（不进 git）
 ```
 

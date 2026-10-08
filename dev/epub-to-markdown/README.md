@@ -10,22 +10,27 @@
 brew install pandoc
 ```
 
-skill 在 `.claude/skills/epub-to-markdown/`。在这个目录里打开 Claude Code 就能用（项目级 skill）。想在所有项目里用，链接到个人 skill 目录：
+skill 在仓库的 `skills/epub-to-markdown/`，用 npx skills 安装：
 
 ```bash
-mkdir -p ~/.claude/skills
-ln -s "$PWD/.claude/skills/epub-to-markdown" ~/.claude/skills/epub-to-markdown
+npx skills add ihaaae/skills --skill epub-to-markdown -g
 ```
+
+本目录（`dev/epub-to-markdown/`）只放开发用的基准测试和实验记录，不会被安装。
 
 ## 直接用脚本
 
+在本目录下：
+
 ```bash
-python3 .claude/skills/epub-to-markdown/scripts/epub2md.py BOOK.epub -o BOOK.md [--toc-depth N] [--media DIR]
+python3 ../../skills/epub-to-markdown/scripts/epub2md.py BOOK.epub -o BOOK.md [--toc-depth N] [--media DIR]
 ```
 
 stderr 输出一份 JSON 报告，字段含义见 SKILL.md 的「检查」一节。
 
 ## 实验
+
+在本目录下：
 
 ```bash
 cp your-books/*.epub books/

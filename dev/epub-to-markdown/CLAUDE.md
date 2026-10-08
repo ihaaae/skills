@@ -11,8 +11,10 @@
 
 ## 目录
 
+路径相对于本目录 `dev/epub-to-markdown/`。
+
 ```
-.claude/skills/epub-to-markdown/
+../../skills/epub-to-markdown/    （skill 本体，npx skills 安装的就是这个目录）
   SKILL.md               skill 说明（给 Agent 看的使用和检查规则）
   scripts/epub2md.py     转换器本体：Python 前处理 + 内嵌 Lua filter + 后处理
 bench/

@@ -11,7 +11,7 @@
 #   books-for-bots cargo install --git https://github.com/prime-radiant-inc/books-for-bots
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SCRIPT="$ROOT/.claude/skills/epub-to-markdown/scripts/epub2md.py"
+SCRIPT="$ROOT/../../skills/epub-to-markdown/scripts/epub2md.py"
 # (written for the bash 3.2 that ships with macOS)
 if [ $# -gt 0 ]; then BOOKS=("$@"); else BOOKS=("$ROOT"/books/*.epub); fi
 

@@ -11,7 +11,7 @@
 # (out/<book>/skill.md vs. the previous run) and update the golden on purpose.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SCRIPT="$ROOT/.claude/skills/epub-to-markdown/scripts/epub2md.py"
+SCRIPT="$ROOT/../../skills/epub-to-markdown/scripts/epub2md.py"
 GOLDEN="$ROOT/bench/golden.tsv"
 PV="$(pandoc --version | head -1 | awk '{print $2}')"
 sha() { if command -v shasum >/dev/null; then shasum -a 256 "$1"; else sha256sum "$1"; fi | cut -d' ' -f1; }

@@ -2,3 +2,6 @@ books/*
 !books/.gitkeep
 out/
 __pycache__/
+# freely licensed reference books are committed; see books/README.md
+!books/README.md
+!books/progit.epub

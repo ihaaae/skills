@@ -12,7 +12,8 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPT="$ROOT/.claude/skills/epub-to-markdown/scripts/epub2md.py"
-BOOKS=("$@"); [ ${#BOOKS[@]} -eq 0 ] && BOOKS=("$ROOT"/books/*.epub)
+# (written for the bash 3.2 that ships with macOS)
+if [ $# -gt 0 ]; then BOOKS=("$@"); else BOOKS=("$ROOT"/books/*.epub); fi
 
 for book in "${BOOKS[@]}"; do
   [ -f "$book" ] || { echo "no books found; put .epub files in books/" >&2; exit 1; }

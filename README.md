@@ -31,6 +31,8 @@ npx skills remove ihaaae/skills -g
 | [decoding-barthez](skills/decoding-barthez) | 解读「巴特兹」篮球评论中的谐音暗语与类比论证 |
 | [finding-feeds](skills/finding-feeds) | Discover and verify RSS/Atom/JSON Feed URLs |
 | [formatting-latex](skills/formatting-latex) | Compile, lint, and reformat LaTeX sources |
+| [porting-anki-to-yanki](skills/porting-anki-to-yanki) | Convert Anki plain-text exports into yanki Markdown notes |
+| [syncing-notes-to-anki](skills/syncing-notes-to-anki) | Author Markdown flashcards and sync them to Anki via yanki |
 | [using-nowledge-mem](skills/using-nowledge-mem) | Use Nowledge Mem via remote MCP |
 
 ## Layout

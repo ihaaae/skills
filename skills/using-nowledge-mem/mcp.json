@@ -1,0 +1,34 @@
+{
+  "nowledge-mem": {
+    "url": "https://mem.selfrss.cloud/mcp",
+    "headers": {
+      "Authorization": "Bearer ${NMEM_API_KEY}"
+    },
+    "includeTools": [
+      "read_context_bundle",
+      "read_working_memory",
+      "memory_search",
+      "memory_add",
+      "memory_update",
+      "memory_supersede",
+      "memory_delete",
+      "list_memory_labels",
+      "thread_search",
+      "thread_fetch_messages",
+      "search_thread_messages",
+      "find_skills",
+      "report_skill_outcome",
+      "propose_skill_improvement",
+      "suggest_skill_check",
+      "list_spaces",
+      "get_space_profile",
+      "query_library",
+      "query_sources",
+      "read_artifact_content",
+      "read_source_content",
+      "search_artifact_chunks",
+      "search_source_chunks",
+      "mem_fs"
+    ]
+  }
+}

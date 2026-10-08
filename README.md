@@ -29,6 +29,7 @@ npx skills remove ihaaae/skills -g
 | [anki-review](skills/anki-review) | Batch Anki review workflow |
 | [comparing-tables](skills/comparing-tables) | Diff Excel/CSV/TSV tables with a deterministic CLI |
 | [decoding-barthez](skills/decoding-barthez) | 解读「巴特兹」篮球评论中的谐音暗语与类比论证 |
+| [epub-to-markdown](skills/epub-to-markdown) | 把 ePub 转成带行号目录、给 Agent 读的单个 Markdown 文件 |
 | [finding-feeds](skills/finding-feeds) | Discover and verify RSS/Atom/JSON Feed URLs |
 | [formatting-latex](skills/formatting-latex) | Compile, lint, and reformat LaTeX sources |
 | [porting-anki-to-yanki](skills/porting-anki-to-yanki) | Convert Anki plain-text exports into yanki Markdown notes |
@@ -45,6 +46,8 @@ skills/
     SKILL.md        # required: frontmatter with `name` and `description`
     scripts/        # optional helper scripts
     references/     # optional reference docs
+dev/
+  <skill-name>/     # optional dev-only files (benchmarks, experiment logs); not installed
 ```
 
 To add a skill, create `skills/<name>/SKILL.md` where `name` in the frontmatter matches the folder name (lowercase, hyphens).

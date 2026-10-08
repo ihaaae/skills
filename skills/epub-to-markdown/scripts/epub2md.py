@@ -44,7 +44,7 @@ local id2slug, used, cur, pending = {}, {}, nil, {}
 local curfile, seenfile, hastext, dropped = nil, {}, {}, 0
 
 local function slugify(s)
-  s = pandoc.text.lower(s)
+  s = pandoc.text.lower(s):gsub("^%s+", ""):gsub("%s+$", "")
   s = s:gsub("[!-,%./:-@%[%]\\%^`{-~]", ""):gsub("%s+", "-")
   if s == "" then s = "section" end
   local n = used[s]
@@ -343,7 +343,16 @@ local strip = {
   Plain = function(el) if #el.content == 0 then return {} end end,
 }
 
+-- non-breaking spaces in prose (spaced-out section numbers, "Proof   We")
+-- would end up inside heading slugs and break links; code keeps its own
+local nbsp = {
+  Str = function(el)
+    if el.text:find("\194\160") then el.text = el.text:gsub("\194\160+", " ") return el end
+  end,
+}
+
 function Pandoc(doc)
+  doc = doc:walk(nbsp)
   relevel(doc.blocks, 0, false)
   doc:walk({traverse = "topdown", Block = record, Inline = record})
   doc = doc:walk(clean):walk(strip)
@@ -443,54 +452,132 @@ def nav_targets(z):
     return out
 
 
-def promote_headings(src, tmp):
+def norm(t):
+    return " ".join(html.unescape(re.sub(r"<[^>]+>", "", t)).lower().split())
+
+
+def promote_headings(z, texts):
     """Books without <h1>..<h6> (calibre/Kindle conversions) style plain <p> as
     headings. Turn the paragraphs that the book's own navigation points at into
-    real headings and return the path of a patched copy (or src if unchanged)."""
-    norm = lambda t: " ".join(html.unescape(re.sub(r"<[^>]+>", "", t)).lower().split())
+    real headings; edits `texts` (zip member -> xhtml) in place, returns the count."""
+    byfile, count = {}, 0
+    for name, frag, depth, title in nav_targets(z):
+        if name in texts:
+            byfile.setdefault(name, []).append((frag, depth, title))
+    for name, entries in byfile.items():
+        text = texts[name]
+        if re.search(r"<h[1-6]\b", text):
+            continue  # this file already has real headings
+        for frag, depth, title in entries:
+            b = norm(title)
+            if frag:
+                pat = r"(?P<p><p\b(?P<a>[^>]*\bid=[\"']%s[\"'][^>]*)>(?P<i>.*?)</p>)" % re.escape(frag)
+                m = re.search(pat, text, re.S)
+            else:
+                # the file itself is the target: one of its first paragraphs
+                # with text (anchors and empty <p/> may come before it)
+                body = re.search(r"<body\b[^>]*>", text)
+                para = re.compile(r"(?P<p><p\b(?P<a>[^>]*?)(?<!/)>(?P<i>.*?)</p>)", re.S)
+                cands = [x for x in para.finditer(text, body.end() if body else 0) if norm(x.group("i"))][:3]
+                m = next((x for x in cands if norm(x.group("i")) in b or b in norm(x.group("i"))), None)
+            if not m:
+                continue
+            a = norm(m.group("i"))
+            if not a or len(a) > 200 or not (a in b or b in a):
+                continue
+            text = f"{text[:m.start('p')]}<h{depth}{m.group('a')}>{m.group('i')}</h{depth}>{text[m.end('p'):]}"
+            count += 1
+        texts[name] = text
+    return count
+
+
+def css_margins(z):
+    """class -> first-line indent in pt (margin-left + text-indent), from the
+    book's stylesheets; hanging indents put the first line left of the margin."""
+    unit = {"pt": 1, "px": 0.75, "em": 12, "rem": 12}
+    out = {}
+    for name in z.namelist():
+        if name.lower().endswith(".css"):
+            css = z.read(name).decode("utf8", "replace")
+            for cls, body in re.findall(r"\.([\w-]+)\s*\{([^}]*)\}", css):
+                pt = lambda m: float(m.group(1)) * unit[m.group(2)] if m else 0
+                m = re.search(r"margin-left\s*:\s*(-?[\d.]+)(pt|px|em|rem)", body)
+                t = re.search(r"text-indent\s*:\s*(-?[\d.]+)(pt|px|em|rem)", body)
+                if m or t:
+                    out[cls] = pt(m) + pt(t)
+    return out
+
+
+def listing_tables(text, margins):
+    """Pseudocode typeset as a table whose first column is consecutive line
+    numbers (CLRS and similar): turn it into a <pre>, keeping the nesting that
+    the code cells express only through CSS margin-left classes."""
+    def cell_text(c):
+        c = re.sub(r"<br\s*/?>", " ", c)
+        return " ".join(html.unescape(re.sub(r"<[^>]+>", "", c)).split())
+
+    def convert(m):
+        rows = re.findall(r"<tr\b.*?</tr>", m.group(0), re.S)
+        cells = [re.findall(r"<td\b[^>]*>(.*?)</td>", r, re.S) for r in rows]
+        if len(rows) < 2 or any(not 2 <= len(cs) <= 3 for cs in cells):
+            return m.group(0)
+        nums = [cell_text(cs[0]) for cs in cells]
+        if not all(n.isdigit() for n in nums) or any(int(b) != int(a) + 1 for a, b in zip(nums, nums[1:])):
+            return m.group(0)
+        indent = []
+        for cs in cells:
+            cls = re.findall(r'class="([^"]*)"', cs[1])
+            indent.append(max([margins.get(c, 0) for k in cls for c in k.split()] or [0]))
+        lo = min(indent)
+        levels = sorted({round(i, 1) for i in indent})
+        step = min([b - a for a, b in zip(levels, levels[1:])] or [1])
+        width = len(nums[-1])
+        lines = []
+        for n, cs, i in zip(nums, cells, indent):
+            line = n.rjust(width) + "  " + "    " * round((i - lo) / step) + cell_text(cs[1])
+            if len(cs) == 3 and cell_text(cs[2]):
+                line += "  " + cell_text(cs[2])
+            lines.append(line.rstrip())
+        return "<pre>" + html.escape("\n".join(lines), quote=False) + "</pre>"
+
+    return re.sub(r"<table\b.*?</table>", convert, text, flags=re.S)
+
+
+def patch_epub(src, tmp):
+    """Rewrite the spine documents before pandoc sees them; return the path of
+    a patched copy (or src if nothing changed) and a few counts."""
+    stats = {"headings_from_nav": 0, "listing_tables": 0}
     try:
         with zipfile.ZipFile(src) as z:
-            members = set(z.namelist())
-            byfile = {}
-            for name, frag, depth, title in nav_targets(z):
-                if name in members:
-                    byfile.setdefault(name, []).append((frag, depth, title))
-            changed, count = {}, 0
-            for name, entries in byfile.items():
-                text = z.read(name).decode("utf8", "replace")
-                if re.search(r"<h[1-6]\b", text):
-                    continue  # this file already has real headings
-                before = count
-                for frag, depth, title in entries:
-                    if frag:
-                        pat = r"(?P<p><p\b(?P<a>[^>]*\bid=[\"']%s[\"'][^>]*)>(?P<i>.*?)</p>)" % re.escape(frag)
-                    else:  # the file itself is the target: its first paragraph is the candidate
-                        pat = r"<body\b[^>]*>\s*(?:<(?:div|section)\b[^>]*>\s*)*(?P<p><p\b(?P<a>[^>]*)>(?P<i>.*?)</p>)"
-                    m = re.search(pat, text, re.S)
-                    if not m:
-                        continue
-                    a, b = norm(m.group("i")), norm(title)
-                    if not a or len(a) > 200 or not (a in b or b in a):
-                        continue
-                    text = f"{text[:m.start('p')]}<h{depth}{m.group('a')}>{m.group('i')}</h{depth}>{text[m.end('p'):]}"
-                    count += 1
-                if count > before:
-                    changed[name] = text.encode("utf8")
+            docs = {n: z.read(n).decode("utf8", "replace") for n in z.namelist()
+                    if re.search(r"\.x?html?$", n, re.I)}
+            texts = dict(docs)
+            try:
+                stats["headings_from_nav"] = promote_headings(z, texts)
+            except Exception as e:  # navigation is nice-to-have
+                print(f"warning: could not use the ePub's navigation for headings: {e}", file=sys.stderr)
+            margins = css_margins(z)
+            for name, text in texts.items():
+                if "<table" in text:
+                    new = listing_tables(text, margins)
+                    stats["listing_tables"] += new.count("<pre>") - text.count("<pre>")
+                    texts[name] = new
+            changed = {n: t.encode("utf8") for n, t in texts.items() if t != docs[n]}
             if not changed:
-                return src, 0
+                return src, stats
             patched = os.path.join(tmp, "patched.epub")
             with zipfile.ZipFile(patched, "w", zipfile.ZIP_DEFLATED) as out:
                 for info in z.infolist():
                     out.writestr(info, changed.get(info.filename) or z.read(info.filename))
-            return patched, count
-    except Exception as e:  # navigation is nice-to-have
-        print(f"warning: could not use the ePub's navigation for headings: {e}", file=sys.stderr)
-        return src, 0
+            return patched, stats
+    except Exception as e:
+        print(f"warning: could not pre-process the ePub: {e}", file=sys.stderr)
+        return src, stats
 
 
 def run_pandoc(src, media):
     with tempfile.TemporaryDirectory() as tmp:
-        src, promoted = promote_headings(src, tmp)
+        src, patched = patch_epub(src, tmp)
         lua = os.path.join(tmp, "epub2md.lua")
         with open(lua, "w", encoding="utf8") as f:
             f.write(LUA)
@@ -513,7 +600,7 @@ def run_pandoc(src, media):
         err = re.sub(r"^epub2md:.*\n", "", err, flags=re.M).strip()
         if err:
             print(err, file=sys.stderr)
-        extra = {"headings_from_nav": promoted, "images_dropped": int(m.group(1)) if m else 0}
+        extra = {**patched, "images_dropped": int(m.group(1)) if m else 0}
         return r.stdout.decode("utf8"), extra
 
 
@@ -576,6 +663,9 @@ def postprocess(text, depth):
         else:
             line = dedupe_locators(line)
             h = HEADING.match(line)
+            if h:  # "2.1      Insertion sort": spacing that imitated a tab stop
+                line = h.group(1) + " " + re.sub(r"  +", " ", h.group(2))
+                h = HEADING.match(line)
             if h and len(h.group(1)) <= depth:
                 toc.append((len(out) + 1, len(h.group(1)), h.group(2)))
         prose = INLINE_CODE.sub("", line)

@@ -97,11 +97,40 @@ baseline 的问题：
 
 对 Pro Git 的影响：正文只少了 19 处 `> ## 标题`——`<aside title="Note: X">` 里重复的 X 标题，toc、链接不变。TPOP 手头没有，没能重跑；它没有 `<section>`、提示框也不是这些 class，预计不受影响，但 golden 行未经本轮验证。三本书中可得的两本在 pandoc 3.1.3 和 3.8 上都通过 `check.py` 和回归。
 
+## 4. Introduction to Algorithms 第 4 版 + TPOP 复测（第四轮，2026-10-08）
+
+TPOP 拿到了（sha256 与 golden 一致）：第三轮的改动对它逐字节无影响。
+
+CLRS 源：35 章 + 8 个 Part + 附录，没有任何 `<h1>`–`<h6>`（只有 3 个 `<h2>`）；NCX 257 项，三级：Part → 章（指向文件本身，无 `#frag`）→ 节（`<p class="level1" id="h1-N">`）；章文件开头是 `<a id="p17"/>` 和空的 `<p class="line-c"/>`，然后才是章标题段落；伪代码是两三列的表格，第一列是行号，代码缩进只靠 class `p2`–`p7`（`margin-left: 40–140pt; text-indent: -20pt`）；公式全是 `<img alt="art">`，没有 MathML；正文和标题里大量不间断空格（“2.1&nbsp;&nbsp;&nbsp;&nbsp;Insertion sort”）。
+
+改之前 skill 在 CLRS 上的问题：
+- 章标题没被提升（无 frag 的导航只看紧跟 `<body>` 的第一个 `<p>`，被锚点和空 `<p/>` 挡住）→ toc 只有 22 条，其中 8 条是同名的 “Introduction”。
+- 伪代码表格变成管道表格，缩进全丢；CLRS 的伪代码没有 end，缩进就是块结构。
+- 28438 个不间断空格；更糟的是标题 slug 里带着 NBSP（`#134    deletion`），这种链接在 Markdown 里不是合法链接，metrics 也没把它们算进 links（所以 dead 显示 0，其实是坏的）。Learning Go 也有 13 个这样的隐藏坏链（`[if](#if-  )`）。
+
+改进：
+1. 导航只指向文件时，在开头前 3 个有文字的段落里找标题（跳过自闭合的 `<p/>`）→ headings_from_nav 157 → 207。
+2. `listing_tables()` 预处理：第一列是连续行号的 2–3 列表格 → `<pre>`；缩进 = `margin-left` + `text-indent`（第一版只看 margin-left，级差算成 40pt，p3、p4 缩成同一级）。172 张表全部是伪代码，逐个看过没有误判。
+3. Lua 先把 Str 里的 NBSP 换成空格；slug 去掉首尾空白；后处理合并标题里的连续空格。
+
+| file | bytes | est_tok | toc | headings | fences | lang | nbsp | inline | links | dead | html | images |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| bfb.md | 2904381 | 806772 | 56 | 56 | 0 | 0 | 0 | 0 | 1718 | 41 | 0 | 1987 |
+| markitdown.md | 3007376 | 835382 | 0 | 0 | 0 | 0 | 5457 | 0 | 7435 | 7435 | 0 | 1987 |
+| pandoc.md | 3210662 | 891850 | 0 | 0 | 0 | 0 | 6464 | 0 | 7435 | 7435 | 0 | 1988 |
+| skill.md（改前） | 3082828 | 856341 | 22 | 157 | 0 | 0 | 28438 | 0 | 778 | 0* | 0 | 1987 |
+| skill.md（改后） | 3018581 | 838494 | 72 | 207 | 172 | 0 | 0 | 0 | 5921 | 0 | 0 | 1955 |
+
+（* 改前大部分链接因 slug 含 NBSP 没被计入。toc 72 = Part + 章 + Part 导言；节是 3 级标题（`--toc-depth 3` 可以收进 toc）；更细的 “2.3.2 …” 小标题不在导航里，仍是粗体段落。1955 张图几乎都是 `alt="art"` 的公式图片，无法还原。）
+
+对其他书：Pro Git、TPOP 只有 NBSP → 空格（TPOP nbsp 475 → 0）；Learning Go 另外修好了 13 个 `#if` 链接。四本书在 pandoc 3.1.3 和 3.8 上都通过 `check.py` 和回归（3.8 下 CLRS 少 27 张管道表格，是 pandoc 本身的差异）。
+
 ## 已知缺陷 / 下一步
 
 - TPOP 的 453 个代码块全是 `text`：源里没有语言信息。可以考虑按内容猜（C / Java / awk / Perl），但误判代价不小。
 - TPOP 385 张图全部没有 alt，默认丢弃；其中约 25 张是真插图。可以考虑：不解压时把无 alt 的插图保留成占位符（`[图: 文件名]`），纯图片页仍丢弃。
 - 代码段落识别只抽查过若干处，没有逐个核对 453 个块。
+- CLRS 的公式是图片（`alt="art"`），只能保留图片引用；伪代码里的上下标（`c<sub>ij</sub>`）在代码块里变成 `cij`。
 - Learning Go 剩下 199 个 `text` 块是 shell 命令和输出（源里没标语言），可以考虑把以 `$ ` 开头的块标成 `console`。
 - 两个脚注被渲染成 `^([1](#节))`，能读但不好看。
 - 导航提升标题只处理 `<p>`；`<div>` 或 `<span>` 充当标题的书还没遇到。

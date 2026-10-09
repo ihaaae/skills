@@ -135,7 +135,136 @@ local function record(el)
   return nil
 end
 
+-- footnotes: a superscript that is nothing but a short internal link ("1",
+-- "*", "†") whose target is a block elsewhere that links back or opens with the
+-- same mark; the block becomes a real footnote and leaves its old place
+local NOTEMARK = {["*"]=1, ["**"]=1, ["***"]=1, ["†"]=1, ["‡"]=1, ["§"]=1, ["¶"]=1}
+
+local function note_mark(s)
+  s = s:gsub("[%[%]%(%)%.%s]", "")
+  if s:match("^%d%d?%d?$") or s:match("^%l$") or NOTEMARK[s] then return s end
+end
+
+-- the target and mark of <sup><a href="#x">1</a></sup> or <a href="#x"><sup>1</sup></a>
+local function noteref(el)
+  local link
+  if el.t == "Superscript" and #el.content == 1 and el.content[1].t == "Link" then
+    link = el.content[1]
+  elseif el.t == "Link" and #el.content == 1 and el.content[1].t == "Superscript" then
+    link = el
+  end
+  if not link or link.target:sub(1, 1) ~= "#" then return nil end
+  local mark = note_mark(stringify(link.content))
+  if mark then return canon(link.target:sub(2)), mark end
+end
+
+local function is_anchor(x)
+  return x.t == "Space" or x.t == "SoftBreak" or (x.t == "Span" and #x.content == 0)
+end
+
+-- the note's text without its leading anchors and mark (often a backlink)
+local function note_body(inlines, mark)
+  local out = pandoc.List(inlines)
+  while out[1] and is_anchor(out[1]) do out:remove(1) end
+  if out[1] and note_mark(stringify(out[1])) == mark then out:remove(1) end
+  while out[1] and is_anchor(out[1]) do out:remove(1) end
+  return out
+end
+
+local function footnotes(doc)
+  local function info(b)
+    local ids, links = {}, {}
+    b:walk({Inline = function(x)
+      local ok, id = pcall(function() return x.identifier end)
+      if ok and id and id ~= "" then ids[canon(id)] = true end
+      if x.t == "Link" and x.target:sub(1, 1) == "#" then links[#links + 1] = canon(x.target:sub(2)) end
+    end})
+    return ids, links
+  end
+  -- every id's holder: the paragraph it sits in, or a Div carrying it
+  local holder, refs = {}, {}
+  local function leaf(b)
+    local ids, links = info(b)
+    local h = {ids = ids, links = links, inlines = b.content}
+    for id in pairs(ids) do holder[id] = holder[id] or h end
+    b:walk({Inline = function(x)
+      local t, m = noteref(x)
+      if t then refs[#refs + 1] = {target = t, mark = m, ids = ids} end
+    end})
+  end
+  doc:walk({
+    Para = leaf, Plain = leaf,
+    Div = function(d)
+      if d.identifier ~= "" and d.content[1] and (d.content[1].t == "Para" or d.content[1].t == "Plain") then
+        local ids, links = info(d)
+        holder[canon(d.identifier)] = {ids = ids, links = links, inlines = d.content[1].content, div = d}
+      end
+    end,
+  })
+  local notes, gone, n = {}, {}, 0
+  for _, r in ipairs(refs) do
+    local h = holder[r.target]
+    if h and not notes[r.target] and not r.ids[r.target] then
+      local back = false
+      for _, l in ipairs(h.links) do if r.ids[l] then back = true end end
+      local lead
+      for _, x in ipairs(h.inlines) do
+        if not is_anchor(x) then lead = note_mark(stringify(x)) break end
+      end
+      if back or lead == r.mark then
+        local first = note_body(h.inlines, r.mark)
+        local body = pandoc.List{pandoc.Para(first)}
+        if h.div then body:extend({table.unpack(h.div.content, 2)}) end
+        notes[r.target] = body
+        gone[h] = true
+        n = n + 1
+      end
+    end
+  end
+  if n == 0 then return doc, 0 end
+  local function drop_leaf(b)
+    local ids = info(b)
+    for id in pairs(ids) do
+      local h = holder[id]
+      if h and gone[h] and not h.div then return {} end
+    end
+  end
+  doc = doc:walk({
+    Para = drop_leaf, Plain = drop_leaf,
+    Div = function(d)
+      local h = d.identifier ~= "" and holder[canon(d.identifier)]
+      if h and gone[h] and h.div then return {} end
+    end,
+  })
+  local used = {}
+  local function swap(el)
+    local t = noteref(el)
+    if t and notes[t] and not used[t] then
+      used[t] = true
+      return pandoc.Note(notes[t])
+    end
+  end
+  return doc:walk({Superscript = swap, Link = swap}), n
+end
+
+-- which spine file each image sits on, in document order and inside boxes too
+local imgfile
+local function tag_image(el)
+  local ok, id = pcall(function() return el.identifier end)
+  if ok and id and id:match("%.x?html?$") then imgfile = id end
+  if el.t == "Image" then
+    el.attributes["epub2md-file"] = imgfile or ""
+    return el
+  end
+end
+
+-- shell sessions are rarely labelled; a block that opens with a "$ " prompt is one
+local function guess_lang(text)
+  return text:match("^%s*%$ ") and "console" or "text"
+end
+
 -- pass 2: structural clean-up
+local placeholders = 0
 local function capitalize(s) return (s:gsub("^%l", string.upper)) end
 
 local function admon_quote(blocks, title)
@@ -202,7 +331,8 @@ local function code_para(el)
     end
   end
   for i, l in ipairs(lines) do lines[i] = l:sub((indent or 0) + 1) end
-  return pandoc.CodeBlock(table.concat(lines, "\n"), pandoc.Attr("", {"text"}))
+  local text = table.concat(lines, "\n")
+  return pandoc.CodeBlock(text, pandoc.Attr("", {guess_lang(text)}))
 end
 
 local clean = {
@@ -288,7 +418,7 @@ local clean = {
       end
     end
     -- pandoc writes class-less blocks as indented code; "text" keeps them fenced
-    el.attr = pandoc.Attr("", {lang or "text"})
+    el.attr = pandoc.Attr("", {lang or guess_lang(el.text)})
     return el
   end,
 
@@ -326,12 +456,18 @@ local clean = {
   end,
 
   Image = function(el)
-    if not MEDIA and stringify(el.caption) == "" then
+    local file = el.attributes["epub2md-file"]
+    el.attr = pandoc.Attr()
+    if MEDIA or stringify(el.caption) ~= "" then return el end
+    -- an image-only page (a scanned code listing, a cover) repeats the text,
+    -- and pandoc puts the metadata cover before the first spine file; a figure
+    -- among text leaves a marker so the reader knows to use --media
+    if file == "" or (seenfile[file] and not hastext[file]) then
       dropped = dropped + 1
       return {}
     end
-    el.attr = pandoc.Attr()
-    return el
+    placeholders = placeholders + 1
+    return pandoc.RawInline("gfm", "[图: " .. el.src:match("[^/]*$") .. "]")
   end,
 }
 
@@ -353,10 +489,15 @@ local nbsp = {
 
 function Pandoc(doc)
   doc = doc:walk(nbsp)
+  local nnotes
+  doc, nnotes = footnotes(doc)
+  doc = doc:walk({traverse = "topdown", Block = tag_image, Inline = tag_image})
   relevel(doc.blocks, 0, false)
   doc:walk({traverse = "topdown", Block = record, Inline = record})
   doc = doc:walk(clean):walk(strip)
   io.stderr:write("epub2md:images_dropped=" .. dropped .. "\n")
+  io.stderr:write("epub2md:images_placeholder=" .. placeholders .. "\n")
+  io.stderr:write("epub2md:footnotes=" .. nnotes .. "\n")
   return doc
 end
 '''
@@ -372,6 +513,18 @@ MATH = re.compile(r"\$\$|(?<![\\$\w])\$[^$\s](?:[^$]*[^$\s])?\$(?![\w$])")
 # a back-of-book index points at many anchors inside one section; once every
 # anchor is rewritten to its section, "[A](#a)-[A](#a)" and repeats are noise
 LOCATOR = re.compile(r"\[[^\]]*\]\(#[^)\s]*\)")
+# one sentence per line: a paragraph stays one paragraph, but no line runs to
+# thousands of characters (line-based readers truncate them). A break goes after
+# . ! ? before a capital, quote or CJK character, or after 。！？; never inside
+# code, math or a link, never before * or _ (a closing ** at the start of a line
+# no longer closes), and never where the next line would open a new block.
+SENT_END = re.compile(r"[.!?][\"')\]”’]* +(?=[A-Z\"“‘(\[`$]|[^\x00-\x7f])|[。！？][”’」』）]* *(?=[^\s”’」』）*_])")
+ABBREV = re.compile(r"(?:^|[\s(])(?:Mr|Mrs|Ms|Dr|Prof|St|Jr|Sr|vs|etc|e\.g|i\.e|cf|Fig|No|Vol|Ch|Sec|Eq|al)\.$", re.I)
+UNSPLIT = re.compile(r"`+[^`]*`+|\$\$.*?\$\$|\$[^$]+\$|!?\[(?:[^\[\]]|\[[^\]]*\])*\]\([^)]*\)|\[\^[^\]]+\]")
+BLOCK_START = re.compile(r"(?:#{1,6}|[-*+]|\d{1,9}[.)])(?:\s|$)|[>|<]|`{3}|~{3}|[=-]+\s*$|\[[^\]]*\]:")
+# quote markers and indentation repeat on every line; a list marker or a
+# footnote label becomes the same width of spaces
+LINE_PREFIX = re.compile(r"((?:\s*>)*\s*)((?:[-*+]|\d{1,9}[.)]|\[\^[^\]]+\]:)\s+)?")
 HTML_TAG = re.compile(r"</?(?:div|span|aside|section|figure|table|tr|td|th|img|math|svg|p|a|pre|code)\b[^>]*>")
 
 
@@ -588,7 +741,7 @@ def run_pandoc(src, media):
         # newer pandoc defaults to GitHub's $`x`$ / ```math; force plain $x$ and $$x$$
         fmt = "gfm-raw_html+tex_math_dollars" + ("-tex_math_gfm" if "tex_math_gfm" in exts else "")
         cmd = ["pandoc", "-f", "epub", "-t", fmt,
-               "--wrap=none", "--lua-filter", lua, src]
+               "--wrap=none", "--reference-location=section", "--lua-filter", lua, src]
         if media:
             cmd += ["--extract-media", media]
         env = dict(os.environ, EPUB2MD_MEDIA="1" if media else "0")
@@ -596,11 +749,11 @@ def run_pandoc(src, media):
         if r.returncode != 0:
             sys.exit("pandoc failed:\n" + r.stderr.decode("utf8", "replace"))
         err = r.stderr.decode("utf8", "replace")
-        m = re.search(r"^epub2md:images_dropped=(\d+)\n", err, re.M)
+        counts = dict(re.findall(r"^epub2md:(\w+)=(\d+)\n", err, re.M))
         err = re.sub(r"^epub2md:.*\n", "", err, flags=re.M).strip()
         if err:
             print(err, file=sys.stderr)
-        extra = {**patched, "images_dropped": int(m.group(1)) if m else 0}
+        extra = {**patched, **{k: int(counts.get(k, 0)) for k in ("images_dropped", "images_placeholder", "footnotes")}}
         return r.stdout.decode("utf8"), extra
 
 
@@ -616,6 +769,25 @@ def dedupe_locators(line):
         seen.add(m.group(1))
         return m.group(0)
     return re.sub(r", (%s)(?=,|$)" % LOCATOR.pattern, once, line)
+
+
+def split_sentences(line):
+    m = LINE_PREFIX.match(line)
+    head, body = m.group(0), line[m.end():]
+    if not body or HEADING.match(body):
+        return [line]
+    cont = m.group(1) + " " * len(m.group(2) or "")
+    guard = [(g.start(), g.end()) for g in UNSPLIT.finditer(body)]
+    parts, start = [], 0
+    for s in SENT_END.finditer(body):
+        cut = s.end()
+        if (any(a < s.start() < b or a < cut < b for a, b in guard) or BLOCK_START.match(body, cut)
+                or ABBREV.search(body, 0, s.start() + 1)):
+            continue
+        parts.append(body[start:cut].rstrip())
+        start = cut
+    parts.append(body[start:])
+    return [head + parts[0]] + [cont + p for p in parts[1:]]
 
 
 def compact_row(line):
@@ -672,7 +844,10 @@ def postprocess(text, depth):
         stats["images"] += len(IMAGE.findall(prose))
         stats["math_spans"] += len(MATH.findall(prose))
         stats["leftover_html_tags"] += len(HTML_TAG.findall(prose))
-        out.append(line)
+        if line.startswith("|") or HEADING.match(line):
+            out.append(line)
+        else:
+            out.extend(split_sentences(line))
     while out and not out[0]:
         out.pop(0)
         toc = [(n - 1, lv, t) for n, lv, t in toc]

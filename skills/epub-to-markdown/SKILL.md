@@ -27,7 +27,7 @@ description: 把 ePub 电子书转成单个给 Agent 读的 Markdown 文件（�
 - YAML front matter：`title`、`authors`、`language`、`source`、`lines`（总行数）和 `toc`。
 - `toc` 每项是 `[行号, 标题级别, 标题]`，行号是输出文件里的绝对行号。一节的范围是从它的行号到下一项的行号。
 - 标题：源文件有 `<h1>`–`<h6>` 时直接使用；章节用嵌套 `<section>` / `data-type="chapter|sect1|…"` 表达层级、标签却一律是 `<h1>` 的书（O'Reilly HTMLBook 常见），按嵌套深度把标题降到正确级别（只降不升）。没有标题标签时（calibre / Kindle 转出来的书常见），把书自带导航（EPUB3 nav 或 EPUB2 NCX）指向的段落提升为标题，级别取导航的层级。
-- 代码块一律是围栏代码块，语言取自源文件的 `data-code-language` 属性或 `language-xxx` / `lang-xxx` class；源文件没标语言的：以 `$ ` 开头的记为 `console`，其余记为 `text`。
+- 代码块一律是围栏代码块，语言取自源文件的 `data-code-language` 属性或 `language-xxx` / `lang-xxx` class；源文件没标语言的：以 `$ ` 或 `# 命令`（root 提示符）开头的记为 `console`，其余记为 `text`。
 - 没有 `<pre>` 的书：每一行都以 `<tt>` / `<code>` 开头的段落会被识别为代码清单，转成 `text` 代码块，不间断空格还原成普通空格并去掉公共缩进；行首的 `?` 之类的页边标记原样保留。
 - 用表格排版的伪代码（第一列是连续行号，如 CLRS）转成 `text` 代码块：`行号  代码  注释`，缩进按 CSS 的 `margin-left` + `text-indent` 还原成每级 4 个空格。
 - class 为 `bold` / `italic` 的 span 转成粗体 / 斜体。

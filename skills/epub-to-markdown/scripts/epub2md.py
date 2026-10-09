@@ -301,9 +301,13 @@ local function tag_image(el)
   end
 end
 
--- shell sessions are rarely labelled; a block that opens with a "$ " prompt is one
+-- shell sessions are rarely labelled; a block that opens with a "$ " prompt is
+-- one, and so is a "# " root prompt followed by a command ("# cd /usr/src") --
+-- a lowercase word, ./ or / path, not a "# $OpenBSD:" or "# Default" comment
 local function guess_lang(text)
-  return text:match("^%s*%$ ") and "console" or "text"
+  if text:match("^%s*%$ ") then return "console" end
+  local cmd = text:match("^%s*# ([%l%./]%S*)")
+  return cmd and not cmd:match(":$") and "console" or "text"
 end
 
 -- pass 2: structural clean-up

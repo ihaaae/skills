@@ -145,11 +145,21 @@ local function note_mark(s)
   if s:match("^%d%d?%d?$") or s:match("^%l$") or NOTEMARK[s] then return s end
 end
 
+-- the one element inside <sup>, ignoring brackets around it: <sup>[<a>1</a>]</sup>
+local function sup_only(el, t)
+  local found
+  for _, x in ipairs(el.content) do
+    if x.t == t and not found then found = x
+    elseif not (x.t == "Space" or (x.t == "Str" and x.text:match("^[%[%]%(%)]+$"))) then return nil end
+  end
+  return found
+end
+
 -- the target and mark of <sup><a href="#x">1</a></sup> or <a href="#x"><sup>1</sup></a>
 local function noteref(el)
   local link
-  if el.t == "Superscript" and #el.content == 1 and el.content[1].t == "Link" then
-    link = el.content[1]
+  if el.t == "Superscript" then
+    link = sup_only(el, "Link")
   elseif el.t == "Link" and #el.content == 1 and el.content[1].t == "Superscript" then
     link = el
   end
@@ -221,7 +231,24 @@ local function footnotes(doc)
       end
     end
   end
-  if n == 0 then return doc, 0 end
+  -- notes pandoc made itself (epub:type="noteref") keep their brackets and
+  -- their own copy of the mark: "^([^1])" and "[^1]: ^([1]) text"
+  local tidy = {
+    Superscript = function(el)
+      local note = sup_only(el, "Note")
+      if note then return note end
+    end,
+    Note = function(el)
+      local b = el.content[1]
+      if b and (b.t == "Para" or b.t == "Plain") and b.content[1] then
+        local mark = note_mark(stringify(b.content[1]))
+        if mark then b.content = note_body(b.content, mark) return el end
+      end
+    end,
+  }
+  local native = 0
+  doc:walk({Note = function() native = native + 1 end})
+  if n == 0 then return doc:walk(tidy), native end
   local function drop_leaf(b)
     local ids = info(b)
     for id in pairs(ids) do
@@ -229,6 +256,20 @@ local function footnotes(doc)
       if h and gone[h] and not h.div then return {} end
     end
   end
+  local function is_gone(b)
+    if b.t == "Para" or b.t == "Plain" then return drop_leaf(b) ~= nil end
+    local h = b.t == "Div" and b.identifier ~= "" and holder[canon(b.identifier)]
+    return h and gone[h] and h.div ~= nil
+  end
+  -- a notes section's own rule goes with the notes it held
+  doc = doc:walk({traverse = "topdown", Div = function(d)
+    local any = false
+    for _, b in ipairs(d.content) do
+      if is_gone(b) then any = true
+      elseif b.t ~= "HorizontalRule" and stringify(b):match("%S") then return nil end
+    end
+    if any then return {}, false end
+  end})
   doc = doc:walk({
     Para = drop_leaf, Plain = drop_leaf,
     Div = function(d)
@@ -244,23 +285,29 @@ local function footnotes(doc)
       return pandoc.Note(notes[t])
     end
   end
-  return doc:walk({Superscript = swap, Link = swap}), n
+  return doc:walk(tidy):walk({Superscript = swap, Link = swap}), native + n
 end
 
--- which spine file each image sits on, in document order and inside boxes too
-local imgfile
+-- which spine file each image sits on, in document order and inside boxes too;
+-- also how often each picture is used (a chapter ornament repeats, a figure doesn't)
+local imgfile, imguses = nil, {}
 local function tag_image(el)
   local ok, id = pcall(function() return el.identifier end)
   if ok and id and id:match("%.x?html?$") then imgfile = id end
   if el.t == "Image" then
     el.attributes["epub2md-file"] = imgfile or ""
+    imguses[el.src] = (imguses[el.src] or 0) + 1
     return el
   end
 end
 
--- shell sessions are rarely labelled; a block that opens with a "$ " prompt is one
+-- shell sessions are rarely labelled; a block that opens with a "$ " prompt is
+-- one, and so is a "# " root prompt followed by a command ("# cd /usr/src") --
+-- a lowercase word, ./ or / path, not a "# $OpenBSD:" or "# Default" comment
 local function guess_lang(text)
-  return text:match("^%s*%$ ") and "console" or "text"
+  if text:match("^%s*%$ ") then return "console" end
+  local cmd = text:match("^%s*# ([%l%./]%S*)")
+  return cmd and not cmd:match(":$") and "console" or "text"
 end
 
 -- pass 2: structural clean-up
@@ -460,9 +507,10 @@ local clean = {
     el.attr = pandoc.Attr()
     if MEDIA or stringify(el.caption) ~= "" then return el end
     -- an image-only page (a scanned code listing, a cover) repeats the text,
-    -- and pandoc puts the metadata cover before the first spine file; a figure
-    -- among text leaves a marker so the reader knows to use --media
-    if file == "" or (seenfile[file] and not hastext[file]) then
+    -- pandoc puts the metadata cover before the first spine file, and a picture
+    -- used three times or more is decoration; a figure among text leaves a
+    -- marker so the reader knows to use --media
+    if file == "" or (seenfile[file] and not hastext[file]) or imguses[el.src] >= 3 then
       dropped = dropped + 1
       return {}
     end

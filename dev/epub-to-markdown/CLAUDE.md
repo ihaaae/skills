@@ -48,7 +48,7 @@ out/                     bench 输出（不进 git）
 - 改动要对 pandoc 3.1.x 和 3.8+ 都成立：两者的 id 命名不同（`file.xhtml#frag` vs `file.xhtml_frag`），数学默认输出也不同。用 `PATH=/path/to/other/pandoc/bin:$PATH bench/regress.sh` 验证另一个版本。
 - `bench/check.py` 对我们的输出必须全部 ok。
 - 启发式规则（代码段落识别、导航提升标题）宁可漏判也不要误判：误判会把正文变成代码或标题，比漏判更伤。
-- 参考书：Pro Git 中文版（有 `<pre class="language-*">`、`<aside>`、表格、大量交叉引用；可从 progit2-zh 的 GitHub release 下载 `progit.epub`）、The Practice of Programming（calibre 转换：无标题标签、代码是 `<tt>`+`<br>`、不间断空格缩进、纯图片页）、Learning Go 第 2 版（O'Reilly HTMLBook：所有层级都用 `<h1>`、`data-code-language`、`data-type` 提示框、书末索引）和 Introduction to Algorithms 第 4 版（CLRS：没有标题标签、伪代码是带行号的表格、公式全是图片）。书本身不在仓库里，sha256 见 `bench/golden.tsv`。
+- 参考书：Pro Git 中文版（有 `<pre class="language-*">`、`<aside>`、表格、大量交叉引用；可从 progit2-zh 的 GitHub release 下载 `progit.epub`）、The Practice of Programming（calibre 转换：无标题标签、代码是 `<tt>`+`<br>`、不间断空格缩进、纯图片页）、Learning Go 第 2 版（O'Reilly HTMLBook：所有层级都用 `<h1>`、`data-code-language`、`data-type` 提示框、书末索引）和 Introduction to Algorithms 第 4 版（CLRS：没有标题标签、伪代码是带行号的表格、公式全是图片）、Absolute OpenBSD 第 2 版（No Starch，DocBook：`epub:type="noteref"` 脚注带方括号、每章开头同一张装饰图、大量 `# ` root 提示符）。书本身不在仓库里，sha256 见 `bench/golden.tsv`。
 
 ## 已知缺陷 / 下一步
 

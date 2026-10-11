@@ -31,6 +31,7 @@ npx skills remove ihaaae/skills -g
 | [decoding-barthez](skills/decoding-barthez) | 解读「巴特兹」篮球评论中的谐音暗语与类比论证 |
 | [epub-to-markdown](skills/epub-to-markdown) | 把 ePub 转成带行号目录、给 Agent 读的单个 Markdown 文件 |
 | [finding-feeds](skills/finding-feeds) | Discover and verify RSS/Atom/JSON Feed URLs |
+| [fleet-ocr](skills/fleet-ocr) | 通过私有 HTTP OCR API 将 PDF 识别为 Markdown/JSON/图片并渐进读取 |
 | [formatting-latex](skills/formatting-latex) | Compile, lint, and reformat LaTeX sources |
 | [porting-anki-to-yanki](skills/porting-anki-to-yanki) | Convert Anki plain-text exports into yanki Markdown notes |
 | [progressive-learning](skills/progressive-learning) | 分层示例 + 同构练习 + 复测，逐层教会单个知识点 |

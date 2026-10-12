@@ -5,6 +5,7 @@
   python3 eval/run.py --learn-dir ~/Learn          # 加上从 Learn 仓库现取内容的真实用例
   python3 eval/run.py --only P04,L-C12 --reps 2
   python3 eval/run.py --dry-run                    # 只组装提示词写到 out/，不调用模型
+  python3 eval/run.py --rejudge out/<上次> --judge-model sonnet   # 沿用上次的回复，换裁判重新评审
   uv run --with anthropic eval/run.py --backend api  # 改走 Claude API（按 token 计费）
 
 两层评分，分开报告：
@@ -395,7 +396,16 @@ def run_one(backend, args, case: dict, rep: int, out_dir: Path) -> dict:
     row = {"id": case["id"], "stage": case["stage"], "rep": rep, "case_hash": case["_hash"],
            "writer_model": args.model, "judge_model": args.judge_model, "backend": args.backend}
     outputs = {}
+    prev = args.prev_rows.get((case["id"], rep)) if args.rejudge else None
+    if prev:  # 只重新评审：沿用上次写好的回复和写作信息
+        row["writer_model"], row["backend"] = prev["writer_model"], prev["backend"]
     for cond in CONDITIONS:
+        if prev:
+            text = (args.rejudge / "outputs" / f"{case['id']}__{cond}__r{rep}.md").read_text()
+            outputs[cond] = text
+            row[cond] = {**prev[cond], "checks": {c: run_check(c, text) for c in case["checks"]}}
+            (out_dir / "outputs" / f"{case['id']}__{cond}__r{rep}.md").write_text(text)
+            continue
         r = backend.call(args.model, system_prompt(case, cond), case["turns"])
         outputs[cond] = r["text"]
         row[cond] = {"served": r["served"], "cost_usd": r["cost_usd"], "seconds": r["seconds"],
@@ -413,8 +423,10 @@ def tally(values):
 
 
 def write_summary(rows: list[dict], errors: list[dict], out_dir: Path, args) -> str:
+    writer = ", ".join(sorted({r["writer_model"] for r in rows})) or args.model
+    rejudged = f"（沿用 `{args.rejudge}` 的回复）" if args.rejudge else ""
     lines = [f"# progressive-learning eval：{out_dir.name}", "",
-             (f"写作 `{args.model}`，裁判 `{args.judge_model}`，后端 `{args.backend}`，"
+             (f"写作 `{writer}`{rejudged}，裁判 `{args.judge_model}`，后端 `{args.backend}`，"
               f"{len({r['id'] for r in rows})} 个用例 × {args.reps} 轮，{len(rows)} 组成功，{len(errors)} 组出错。"), ""]
 
     overall = tally([r["judge"]["merged"]["overall"] for r in rows])
@@ -473,6 +485,7 @@ def main() -> int:
     p.add_argument("--jobs", type=int, default=3, help="并发数；订阅有用量上限，不宜太大")
     p.add_argument("--out", type=Path, help="输出目录，默认 out/<时间>")
     p.add_argument("--dry-run", action="store_true", help="只写出组装好的提示词，不调用模型")
+    p.add_argument("--rejudge", type=Path, help="上次的输出目录：不重新写作，只用 --judge-model 重新评审那些回复")
     args = p.parse_args()
 
     cases = load_cases(args.cases, args.learn_dir.expanduser() if args.learn_dir else None)
@@ -499,6 +512,16 @@ def main() -> int:
 
     backend = ClaudeCLI(args.effort) if args.backend == "cli" else ClaudeAPI(args.effort)
     jobs = [(c, rep) for c in cases for rep in range(1, args.reps + 1)]
+    args.prev_rows = {}
+    if args.rejudge:
+        prev = [json.loads(line) for line in (args.rejudge / "results.jsonl").read_text().splitlines() if line]
+        args.prev_rows = {(r["id"], r["rep"]): r for r in prev}
+        stale = [r["id"] for r in prev if r["id"] in {c["id"] for c in cases}
+                 and r["case_hash"] != next(c["_hash"] for c in cases if c["id"] == r["id"])]
+        if stale:
+            print(f"注意：这些用例在上次运行后改过，旧回复对应的是旧场景：{', '.join(sorted(set(stale)))}", file=sys.stderr)
+        jobs = [(c, rep) for c in cases for rep in sorted({r for (i, r) in args.prev_rows if i == c["id"]})]
+        args.reps = max((rep for _, rep in jobs), default=1)
     rows, errors = [], []
     with ThreadPoolExecutor(max_workers=args.jobs) as pool, (out_dir / "results.jsonl").open("w") as fout:
         futures = {pool.submit(run_one, backend, args, c, rep, out_dir): (c, rep) for c, rep in jobs}

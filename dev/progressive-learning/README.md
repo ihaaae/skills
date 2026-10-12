@@ -31,6 +31,8 @@ python3 eval/run.py --only P05,L-C12 --reps 3  # 指定用例，每个跑 3 轮
 python3 eval/run.py --learn-dir ~/Learn --dry-run   # 只把组装好的提示词写到 out/，不调用模型
 ```
 
+换裁判时不必重新写作：`python3 eval/run.py --learn-dir ~/Learn --rejudge out/<上次> --judge-model sonnet` 会沿用上次 `outputs/` 里的回复，只重新评审。
+
 结果在 `out/<时间>/`：`summary.md` 是汇总表，`outputs/` 是每份回复的原文，`results.jsonl` 有逐项的裁判理由，`errors.jsonl` 记出错的组（超时、接口报错等不算任何一方输）。
 
 ### 后端

@@ -12,7 +12,7 @@ Teaching a hard subject to someone without the background fails in three predict
 ## How this fits with progressive-learning
 
 - **topic-graph** decides *what* to learn and *in what order*: building and growing the graph, diagnosing prior knowledge, picking the next node, policing which concepts may be referenced, and persisting progress.
-- **progressive-learning** decides *how* to teach a single node: 定位 → 知识 → 例子 → 同构问题 → 解答 → 复测 → 升级 (2–4 layers, knowledge may be layered) → 延伸 → 回到全景, in explicit modules.
+- **progressive-learning** decides *how* to teach a single node: the lesson's modules, layers, examples and questions.
 
 A node is sized so that one complete progressive-learning run fits in it. A session is: `next` → `preflight` → teach with progressive-learning → write the summary and `set` the status → repeat or stop.
 
@@ -136,7 +136,7 @@ A node is one claim, one distinction, or one mechanism that the learner could st
 
 A graph built only by chaining backward is purely bottom-up: every node is a detail, and the learner meets the whole only at the very end, if at all. Good learning alternates — see the whole roughly, go down into one part, come back up and see the whole more sharply. Build that rhythm into the graph with three kinds of node:
 
-- **Map node** (top-down, at the entry of a group or a big subtree): "X consists of these parts; each part answers this question." Example: "CANopen = object dictionary + communication objects + device states + device profiles; each answers one question about a device." Teach it early, roughly, as a scaffold, and mark it a prerequisite of the group's first detail nodes. Test it by classification ("a new requirement appears — which part handles it?"), never by the parts' details; one layer of classification questions is usually enough. Every later detail lesson points back to its place on this map.
+- **Map node** (top-down, at the entry of a group or a big subtree): "X consists of these parts; each part answers this question." Example: "CANopen = object dictionary + communication objects + device states + device profiles; each answers one question about a device." Teach it early, roughly, as a scaffold, and mark it a prerequisite of the group's first detail nodes. Test it by classification ("a new requirement appears — which part handles it?"), never by the parts' details. Every later detail lesson points back to its place on this map.
 - **Mechanism / claim node** (bottom-up, the default): one claim, one distinction, one mechanism, as described above.
 - **Synthesis node** (top-down again, after several details): one cross-cutting idea that only becomes visible once the parts are known — a comparison table across them, a classification, a design trade-off. Example: "the communication objects fall into three interaction models: master/slave, client/server, producer/consumer". Its prereqs are the details it unifies. Test it by applying the classification to a case not taught before.
 
@@ -144,17 +144,11 @@ Each main-track group should have a map node near its entry and at least one syn
 
 ### Reading nodes
 
-Usually the tutor teaches and the learner never reads the source. But a well-written outside text — a good tutorial, a book chapter — can give a top-down view faster than lessons can, and a learner who chooses to read it should get credit for doing so. A **reading node** (`mode: "reading"`) assigns a short reading: which document, which sections, roughly 10–15 minutes, plus two or three guiding questions to read with. The flow:
-
-1. The tutor gives the 定位, the reading assignment and the guiding questions, then stops.
-2. The learner reads, then comes back with questions. The tutor answers them only with ✅ concepts plus what the assigned sections say.
-3. Two verification questions follow, about the claims the node lists. Correct answers → `mastered`.
-
-The node body lists the exact sections assigned and the claims they are meant to establish. Questions may rely only on those claims and never on other details of the text. Reading suits map nodes and motivation/history best. A mechanism that needs worked examples is still taught.
+Usually the tutor teaches and the learner never reads the source. But a well-written outside text — a good tutorial, a book chapter — can give a top-down view faster than lessons can, and a learner who chooses to read it should get credit for doing so. A **reading node** (`mode: "reading"`) assigns a short reading instead of teaching; progressive-learning gives the lesson flow. The node body lists the exact sections assigned and the claims they are meant to establish. Reading suits map nodes and motivation/history best. A mechanism that needs worked examples is still taught.
 
 ### The 20-minute rule
 
-Each node, including its exercises, should take under 20 minutes: two to four layers of rising difficulty (a map node usually one), each an example and two short questions, with knowledge introduced where a layer needs it. Size nodes by these tests:
+Each node, including its exercises, should take under 20 minutes: one full progressive-learning run. Size nodes by these tests:
 
 - **One-paragraph test.** The first layer's 知识 section can be written in a short paragraph that introduces no new term besides the node's own subject. If it needs a second new term, that term is probably its own node.
 - **Ladder test.** Each later layer of progressive-learning adds one real-world variable the learner already knows, or one more piece of the node's own mechanism. If a layer would need a concept that is neither ✅ nor part of this node, the concept becomes a separate node and this node gets smaller. If the node needs more than four layers, split it.
@@ -194,16 +188,10 @@ Verified bottom-up knowledge is necessary but not sufficient. A learner who can 
 
 **1. Every lesson knows what it is for.**
 - In `topic.yaml`, each `[[goal]]` carries a `question`: one concrete question, in the learner's own terms, that they will be able to answer at the end. `preflight` and `next` print the chain from the current node to that goal's target, together with this question.
-- Each lesson opens by saying, in two or three sentences, which goal it serves and which link of that chain it is. It closes by saying what the learner can now do or answer that they couldn't before, and what the next link will add.
+- Each lesson opens and closes by placing itself on that chain (progressive-learning's 定位 and 回到全景).
 - A node that sits on no goal path must be justified by the learner's choice (a change of pace, curiosity). Otherwise don't recommend it.
 
-**2. Every node gets more than one angle, not just the bare claim.** Objective knowledge needs interpretation to stick. When a node is written and taught, look for these angles:
-- **Motivation / history.** What problem forced this design, or what constraint makes it so? Example: CAN was born in cars with no host computer, so nobody could assign who talks — hence broadcast and arbitration.
-- **Picture.** Geometric meaning, a timeline, a layered diagram, a comparison table. Every node has at least one picture or table; its form fits the node — a flow or timeline for a mechanism, a comparison table for a distinction, a layered map for a map node. Draw it in mermaid or a Markdown table, not ASCII art (format rules: progressive-learning, 知识 → 图或表).
-- **Connection.** The same idea in a field the learner already knows: OSI layers, an analogy from software, an earlier ✅ node in another group.
-- **Consequence.** What follows for the learner's purpose (for a design-altitude learner: what it constrains in the design).
-
-Not every angle exists for every node; don't invent history or force an analogy. These angles are explanation, not decoration, so they obey rule 2 (✅ concepts only) and get tested. The cheapest test of motivation is counterfactual: "if constraint X didn't exist, which part of the design could change?"
+**2. Every node gets more than the bare claim.** Objective knowledge needs interpretation to stick. A node's draft and its lesson carry its motivation and a picture or table, and where they exist a connection to a field the learner knows and the consequence for the learner's purpose (for a design-altitude learner: what it constrains in the design). progressive-learning's 知识 module says how each is written and tested. Don't invent history or force an analogy.
 
 **3. Zoom out regularly.** The map and synthesis nodes above do this structurally. In addition:
 - When the learner returns after a break, starts a new group, or seems to be losing the thread, open with a one-minute "you are here" view: the group map with ✅ parts marked.
@@ -283,7 +271,7 @@ Diagnosis answers "which nodes can be marked ✅ without teaching?" It runs when
 
 1. **Choose** with `graph.py next`. The ranking encodes the priorities: retests, then main-track bottlenecks on the goal path, then side nodes for a change of pace.
 2. **Pre-flight**: `graph.py preflight ID`. It refuses locked nodes. Its output is the *allowed vocabulary* for the explanation, every example, and every expected answer path. If a planned example needs anything outside it, either teach that node first or cut the example down. Before teaching, fill the node's body with a draft (the claims to teach, the motivation, the planned picture or table, the source anchors) and check every claim against the source. If `references/` has a text covering the node, read it first and borrow its framing (see Reference texts). Untaught nodes often have only a title. Titles are written while the graph is built, from a quicker read, and can over-claim. If the source says otherwise, correct the title first — the learner is about to be tested on it.
-3. **Teach with progressive-learning.** The node is the unit — one full run of two to four layers, as many as the node needs. Teach consistently with the prereq summaries `preflight` printed. Open with the route `preflight` printed (what this node is for), and prepare the motivation and the picture or table before the lesson (see "Big picture and meaning").
+3. **Teach with progressive-learning.** The node is the unit — one full run. Teach consistently with the prereq summaries `preflight` printed.
 4. **Mid-lesson gaps.** If the learner's question or a needed step reaches outside ✅ territory, stop and say what node it belongs to. If none exists, `graph.py add` it. Then either switch to it (and return) or mark the boundary explicitly and continue, recording a debt.
 5. **Record.** Write the node's summary into its file (below), then `graph.py set`. Every layer's two questions correct → `mastered`. Session ended mid-node, or content delivered without retest → `taught`, with a note in the body of where it stopped. A wrong second retest means not mastered, regardless of the first answer.
 

@@ -1,8 +1,3 @@
-{"id": "L-C12", "source": "learn", "topic": "robot-learn", "node": "C12", "stage": "opening"}
-{"id": "L-B10", "source": "learn", "topic": "robot-learn", "node": "B10", "stage": "opening"}
-{"id": "L-C4", "source": "learn", "topic": "robot-learn", "node": "C4", "stage": "opening"}
-{"id": "L-A13", "source": "learn", "topic": "robot-learn", "node": "A13", "stage": "opening"}
-{"id": "L-F2", "source": "learn", "topic": "robot-learn", "node": "F2", "stage": "opening"}
-{"id": "L-O2", "source": "learn", "topic": "robot-learn", "node": "O2", "stage": "opening"}
-{"id": "L-X12", "source": "learn", "topic": "robot-learn", "node": "X12", "stage": "opening"}
-{"id": "L-DSP-F1", "source": "learn", "topic": "Hidng-DSP", "node": "F1", "stage": "opening"}
+{"id": "L-C12", "source": "learn", "topic": "robot-learn", "node": "C12", "stage": "document"}
+{"id": "L-C4", "source": "learn", "topic": "robot-learn", "node": "C4", "stage": "document"}
+{"id": "L-DSP-F1", "source": "learn", "topic": "Hidng-DSP", "node": "F1", "stage": "document"}

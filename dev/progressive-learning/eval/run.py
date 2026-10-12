@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """progressive-learning 的对比 eval：同一个场景，带 skill 和不带 skill 各写一遍下一轮回复，再比较。
 
+用例分两类：写 topic 文档的那一轮（document 等阶段，回复就是整份文档），
+以及文档写好之后按文档上课的某一轮（文档放进上下文）。
+
   python3 eval/run.py                              # 跑 cases/ 下所有用例（Learn 用例需要 --learn-dir）
   python3 eval/run.py --learn-dir ~/Learn          # 加上从 Learn 仓库现取内容的真实用例
-  python3 eval/run.py --only P04,L-C12 --reps 2
+  python3 eval/run.py --only D01,L-C12 --reps 2
   python3 eval/run.py --dry-run                    # 只组装提示词写到 out/，不调用模型
   python3 eval/run.py --rejudge out/<上次> --judge-model sonnet   # 沿用上次的回复，换裁判重新评审
   python3 eval/run.py --against /tmp/old-SKILL.md  # 新旧两版 skill 对比（baseline 一边用旧版）
@@ -47,26 +50,29 @@ CONDITIONS = ("skill", "baseline")
 
 # 每个阶段：这一轮应该达到什么（给裁判的结果描述），以及格式检查。
 STAGES = {
+    "document": {
+        "expect": "学习者要学一个新知识点，并要求先把整节课写成一份 topic 文档：讲清这节课通往什么目标、"
+                  "核心原理及其动机，配图或表；之后是逐层加深的例子和题目，每道题都能只靠前面讲过的内容"
+                  "和学习者已有的知识解出来；答案和解析放在文末，学习者从头读时不会先看到答案。",
+        "checks": ["section_heading", "h3:定位", "h3:知识", "h3:例子一", "h3:问题一", "h3:问题二", "diagram",
+                   "h2:答案", "layers:1-4", "two_questions_per_layer", "no_answer_before_key"],
+    },
+    "reading_document": {
+        "expect": "这个知识点要求学习者去读一段指定的材料，学习者要求先写成 topic 文档：说明这节课的定位，"
+                  "布置具体的阅读任务（读哪篇哪几节、预计用时）和两三个带着读的引导问题，"
+                  "收拢材料要建立的主张，再出只考这些主张的题；不要把材料内容自己讲一遍代替阅读。",
+        "checks": ["h3:定位", "h3:阅读任务", "h3:问题一", "h2:答案", "no_h3:例子", "no_answer_before_key"],
+    },
+    "too_big": {
+        "expect": "学习者要求把一个知识点写成 topic 文档，但这个知识点明显不是 25 分钟能学完的："
+                  "不要勉强写出文档，而是告诉学习者它太大在哪里、可以怎样拆。",
+        "checks": ["no_h3:例子一", "no_h3:问题一"],
+    },
     "opening": {
-        "expect": "开始教一个新知识点的第一轮：让学习者知道这节课为什么要学、通往什么目标，"
+        "expect": "这节课的 topic 文档已经写好，现在开始上课的第一轮：让学习者知道这节课为什么要学、通往什么目标，"
                   "讲清核心原理及其动机，配一张帮助理解的图或表；这一轮只讲新内容，不出题，"
                   "讲完停下来让学习者提问或说继续。",
         "checks": ["section_heading", "h3:定位", "h3:知识", "diagram", "no_h3:例子", "no_h3:问题", "no_options"],
-    },
-    "scope": {
-        "expect": "学习者没有图谱、只说想学一个主题：先用一两个场景化的小问题确认最关键的前置知识，"
-                  "或判断主题是否太大需要先拆分；不要一上来把整个主题讲完。",
-        "checks": ["no_h3:例子", "no_h3:问题解答"],
-    },
-    "example": {
-        "expect": "学习者读完知识部分说继续：给一个完整、具体、最简单的例子，写成'一个明确的问题 + 按步骤解答'，"
-                  "最后压成一条可以照着用的判断方法；这一轮不出题，讲完停下。",
-        "checks": ["h3:例子一", "no_h3:问题", "no_options"],
-    },
-    "question": {
-        "expect": "学习者读完例子说继续：出一道和例子同构的题（只换表面条件，不加新概念），"
-                  "最好是 4～5 个选项的单选题；只出题，不给答案，停下等回答。",
-        "checks": ["h3:问题一", "options:4-5", "no_h3:问题解答", "no_h3:例子"],
     },
     "feedback_wrong": {
         "expect": "学习者答错了：明确说答错，指出他的推理具体在哪一步偏了（对照例子里的方法），"
@@ -85,29 +91,19 @@ STAGES = {
                   "这一轮不出新题。",
         "checks": ["h3:问题解答二", "h3any:例子二|知识二", "no_h3:问题三"],
     },
-    "missing_prereq": {
-        "expect": "学习者的提问暴露出他缺少一个还没学过的前置概念：不要在当前课里用两句话顺手补上，"
-                  "而是停下来说明需要先学这个前置，建议把它作为单独的知识点学完再回来（或明确标注边界后继续）。",
-        "checks": ["no_h3:问题二", "no_h3:例子二"],
-    },
-    "reading": {
-        "expect": "这是一个阅读节点：说明这节课的定位，布置具体的阅读任务（读哪篇哪几节、预计用时），"
-                  "给两三个带着读的引导问题，然后停下等学习者读完；不要自己把材料内容讲一遍，不出题。",
-        "checks": ["h3:定位", "h3:阅读任务", "no_h3:问题", "no_h3:例子"],
-    },
-    "plain_question": {
-        "expect": "学习者只是问一个简单的事实性问题，并不想系统学习：直接、简洁地回答即可，"
-                  "不需要展开成一整节课。",
-        "checks": ["no_h3:问题一", "no_h3:例子一"],
-    },
 }
 
+# 写文档的阶段：在最后一条用户消息后面加上这段请求。
+DOC_STAGES = {"document", "reading_document", "too_big"}
+DOC_REQUEST = ("请先把这节课写成一份完整的 topic 文档（含全部题目，答案集中放在文末），写好后我们再按文档上课。"
+               "本环境不能写文件，直接把文档作为回复输出。")
+
 BASELINE_SYSTEM = """你是一个耐心的学习助手，帮助用户学习。下面附上用户的工作区说明和本专题的规则，以及管理学习进度用的 topic-graph skill。\
-本环境里你不能调用工具：需要的命令输出会直接写在用户消息里。只写出你的下一条回复。"""
+本环境里你不能调用工具：需要的命令输出会直接写在用户消息里，要写进文件的内容直接写在回复里。只写出你的下一条回复。"""
 
 SKILL_SYSTEM = """你是一个耐心的学习助手，帮助用户学习。下面附上用户的工作区说明和本专题的规则，以及管理学习进度用的 topic-graph skill，\
 和讲课用的 progressive-learning skill。教学时遵循 progressive-learning skill。\
-本环境里你不能调用工具：需要的命令输出会直接写在用户消息里。只写出你的下一条回复。"""
+本环境里你不能调用工具：需要的命令输出会直接写在用户消息里，要写进文件的内容直接写在回复里。只写出你的下一条回复。"""
 
 
 # ---------------------------------------------------------------- 用例
@@ -125,9 +121,15 @@ def load_cases(paths: list[Path], learn_dir: Path | None) -> list[dict]:
                     continue
                 case = materialize_learn_case(case, learn_dir)
             case["turns"] = [resolve_turn(t) for t in case["turns"]]
-            for key in ("context", "learner"):
+            if case["stage"] in DOC_STAGES:
+                last = case["turns"][-1]
+                case["turns"][-1] = {**last, "content": last["content"] + "\n\n" + DOC_REQUEST}
+            for key in ("context", "learner", "doc"):
                 if f"{key}_ref" in case:
                     case[key] = (FIXTURES / case.pop(f"{key}_ref")).read_text().strip()
+            if case.get("doc"):
+                case["context"] = (case.get("context", "") + "\n\n# 本节课的 topic 文档（已写好，上课时按它的顺序走）\n\n"
+                                   + case.pop("doc")).strip()
             stage = STAGES[case["stage"]]
             case.setdefault("expect", stage["expect"])
             case.setdefault("checks", stage["checks"])
@@ -189,11 +191,33 @@ def h3_titles(text: str) -> list[str]:
     return [m.group(1).strip() for m in re.finditer(r"^###\s+(.+)$", text, re.MULTILINE)]
 
 
+ANSWER_LINE_RE = re.compile(r"^\s*\**(?:正确)?答案\**\s*[:：]", re.MULTILINE)
+
+
+def split_key(text: str) -> tuple[str, str]:
+    """把文档拆成正文和文末的答案部分（第一个标题里带"答案"的二级标题起）。"""
+    m = re.search(r"^##\s+[^#\n]*答案", text, re.MULTILINE)
+    return (text[:m.start()], text[m.start():]) if m else (text, "")
+
+
 def run_check(name: str, text: str) -> bool:
     heads = h3_titles(text)
     kind, _, arg = name.partition(":")
     if kind == "section_heading":
         return bool(re.search(r"^##\s+\S", text, re.MULTILINE))
+    if kind == "h2":
+        return bool(re.search(rf"^##\s+[^#\n]*{re.escape(arg)}", text, re.MULTILINE))
+    if kind == "layers":
+        lo, hi = (int(x) for x in arg.split("-"))
+        return lo <= sum(h.startswith("例子") for h in h3_titles(split_key(text)[0])) <= hi
+    if kind == "two_questions_per_layer":
+        body_heads = h3_titles(split_key(text)[0])
+        examples = sum(h.startswith("例子") for h in body_heads)
+        questions = sum(bool(re.match(r"问题[一二三四五六七八九十]+\s*$", h)) for h in body_heads)
+        return examples > 0 and questions == 2 * examples
+    if kind == "no_answer_before_key":
+        body, key = split_key(text)
+        return bool(key) and not ANSWER_LINE_RE.search(body.split("### 问题一", 1)[-1])
     if kind == "h3":
         return any(h.startswith(arg) for h in heads)
     if kind == "h3any":
@@ -333,7 +357,7 @@ JUDGE_SCHEMA = {
     "additionalProperties": False,
 }
 
-CRITERIA = ["readable", "taught_only", "accurate", "meaning", "pacing", "task", "watch"]
+CRITERIA = ["readable", "taught_only", "accurate", "meaning", "pacing", "questions", "task", "watch"]
 
 
 def judge_prompt(case: dict, a: str, b: str) -> str:

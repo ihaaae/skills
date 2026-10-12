@@ -27,6 +27,7 @@ npx skills remove ihaaae/skills -g
 | Skill | Description |
 | --- | --- |
 | [anki-review](skills/anki-review) | Batch Anki review workflow |
+| [book-graph](skills/book-graph) | 以一本书为骨架建学习图谱：章节 → 节点映射、覆盖检查、深度、切分规则 |
 | [comparing-tables](skills/comparing-tables) | Diff Excel/CSV/TSV tables with a deterministic CLI |
 | [decoding-barthez](skills/decoding-barthez) | 解读「巴特兹」篮球评论中的谐音暗语与类比论证 |
 | [epub-to-markdown](skills/epub-to-markdown) | 把 ePub 转成带行号目录、给 Agent 读的单个 Markdown 文件 |

@@ -6,6 +6,7 @@
   python3 eval/run.py --only P04,L-C12 --reps 2
   python3 eval/run.py --dry-run                    # 只组装提示词写到 out/，不调用模型
   python3 eval/run.py --rejudge out/<上次> --judge-model sonnet   # 沿用上次的回复，换裁判重新评审
+  python3 eval/run.py --against /tmp/old-SKILL.md  # 新旧两版 skill 对比（baseline 一边用旧版）
   uv run --with anthropic eval/run.py --backend api  # 改走 Claude API（按 token 计费）
 
 两层评分，分开报告：
@@ -79,8 +80,9 @@ STAGES = {
     },
     "upgrade": {
         "expect": "学习者第一层两道题都答对：先对第二题给出反馈（点明他用对了哪条规律），"
-                  "再进入下一层：给一个在原理不变的基础上只多一个现实变量的新例子；这一轮不出新题。",
-        "checks": ["h3:问题解答二", "h3:例子二", "no_h3:问题三"],
+                  "再进入下一层，给出这一层的第一块新内容：一段新的知识，或者一个在原理不变的基础上多一个现实变量的新例子；"
+                  "这一轮不出新题。",
+        "checks": ["h3:问题解答二", "h3any:例子二|知识二", "no_h3:问题三"],
     },
     "missing_prereq": {
         "expect": "学习者的提问暴露出他缺少一个还没学过的前置概念：不要在当前课里用两句话顺手补上，"
@@ -193,6 +195,8 @@ def run_check(name: str, text: str) -> bool:
         return bool(re.search(r"^##\s+\S", text, re.MULTILINE))
     if kind == "h3":
         return any(h.startswith(arg) for h in heads)
+    if kind == "h3any":
+        return any(h.startswith(a) for a in arg.split("|") for h in heads)
     if kind == "no_h3":
         return not any(h.startswith(arg) for h in heads)
     if kind == "diagram":
@@ -291,13 +295,17 @@ class ClaudeAPI:
 
 # ---------------------------------------------------------------- 写作与评审
 
+SKILL_FILES = {"skill": SKILL, "baseline": None}   # --skill / --against 会改这里
+
+
 def system_prompt(case: dict, condition: str) -> str:
-    parts = [SKILL_SYSTEM if condition == "skill" else BASELINE_SYSTEM]
+    skill_file = SKILL_FILES[condition]
+    parts = [SKILL_SYSTEM if skill_file else BASELINE_SYSTEM]
     if case["context"]:
         parts.append(case["context"])
     parts.append("# topic-graph skill\n\n" + TOPIC_GRAPH_SKILL.read_text())
-    if condition == "skill":
-        parts.append("# progressive-learning skill\n\n" + SKILL.read_text())
+    if skill_file:
+        parts.append("# progressive-learning skill\n\n" + skill_file.read_text())
     return "\n\n---\n\n".join(parts)
 
 
@@ -424,10 +432,11 @@ def tally(values):
 
 def write_summary(rows: list[dict], errors: list[dict], out_dir: Path, args) -> str:
     writer = ", ".join(sorted({r["writer_model"] for r in rows})) or args.model
+    sides = f"skill 一边用 `{args.skill}`，baseline 一边" + (f"用 `{args.against}`" if args.against else "不带 skill")
     rejudged = f"（沿用 `{args.rejudge}` 的回复）" if args.rejudge else ""
     lines = [f"# progressive-learning eval：{out_dir.name}", "",
              (f"写作 `{writer}`{rejudged}，裁判 `{args.judge_model}`，后端 `{args.backend}`，"
-              f"{len({r['id'] for r in rows})} 个用例 × {args.reps} 轮，{len(rows)} 组成功，{len(errors)} 组出错。"), ""]
+              f"{len({r['id'] for r in rows})} 个用例 × {args.reps} 轮，{len(rows)} 组成功，{len(errors)} 组出错。"), sides + "。", ""]
 
     overall = tally([r["judge"]["merged"]["overall"] for r in rows])
     lines += ["## 盲评总体偏好", "",
@@ -485,9 +494,12 @@ def main() -> int:
     p.add_argument("--jobs", type=int, default=3, help="并发数；订阅有用量上限，不宜太大")
     p.add_argument("--out", type=Path, help="输出目录，默认 out/<时间>")
     p.add_argument("--dry-run", action="store_true", help="只写出组装好的提示词，不调用模型")
+    p.add_argument("--skill", type=Path, default=SKILL, help="skill 一边用的 SKILL.md，默认是仓库里的当前版本")
+    p.add_argument("--against", type=Path, help="baseline 一边改用这个 SKILL.md（比较两个版本），不给就是不带 skill")
     p.add_argument("--rejudge", type=Path, help="上次的输出目录：不重新写作，只用 --judge-model 重新评审那些回复")
     args = p.parse_args()
 
+    SKILL_FILES["skill"], SKILL_FILES["baseline"] = args.skill, args.against
     cases = load_cases(args.cases, args.learn_dir.expanduser() if args.learn_dir else None)
     if args.only:
         wanted = set(args.only.split(","))

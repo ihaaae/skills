@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import random
 import re
@@ -42,6 +43,7 @@ REPO = DEV.parent.parent                          # 仓库根
 SKILL = REPO / "skills" / "progressive-learning" / "SKILL.md"
 TOPIC_GRAPH_SKILL = REPO / "skills" / "topic-graph" / "SKILL.md"
 GRAPH_PY = REPO / "skills" / "topic-graph" / "scripts" / "graph.py"
+CHECK_TOPIC_PY = SKILL.parent / "scripts" / "check_topic.py"
 CASES_DIR = DEV / "cases"
 FIXTURES = CASES_DIR / "fixtures"
 
@@ -54,15 +56,13 @@ STAGES = {
         "expect": "学习者要学一个新知识点，并要求先把整节课写成一份 topic 文档：讲清这节课通往什么目标、"
                   "核心原理及其动机，配图或表；之后是逐层加深的例子和题目，每道题都能只靠前面讲过的内容"
                   "和学习者已有的知识解出来；答案和解析放在文末，学习者从头读时不会先看到答案。",
-        "checks": ["section_heading", "h3:定位", "h3:知识", "h3:例子一", "h3:问题一", "h3:问题二", "diagram",
-                   "h2:答案", "layers:2-4", "two_questions_per_layer", "no_answer_before_key"],
+        "checks": ["topic_doc"],
     },
     "reading_document": {
         "expect": "这个知识点要求学习者去读一段指定的材料，学习者要求先写成 topic 文档：说明这节课的定位，"
                   "布置具体的阅读任务（读哪篇哪几节、预计用时）和两三个带着读的引导问题，"
                   "收拢材料要建立的主张，再逐层用例子和题目考这些主张及其应用；不要把材料内容自己讲一遍代替阅读。",
-        "checks": ["h3:定位", "h3:阅读任务", "h3:知识", "h3:例子一", "h3:问题一", "h2:答案", "layers:2-4",
-                   "two_questions_per_layer", "no_answer_before_key"],
+        "checks": ["topic_doc:reading"],
     },
     "too_big": {
         "expect": "学习者要求把一个知识点写成 topic 文档，但这个知识点明显不是 25 分钟能学完的："
@@ -84,7 +84,7 @@ STAGES = {
         "expect": "学习者第一题答对、第二道复测题答错：判断并说明错在哪一步；第一次答对不算掌握，"
                   "不能升级到更难的内容，应回到当前层用更简单或更接近原例子的方式重新解释，再测"
                   "（复测题可以紧跟在重讲之后，也可以等学习者读完重讲再给，两种都可以）。",
-        "checks": ["h3:问题解答二", "no_h3:例子二"],
+        "checks": ["h3:问题解答二", "h3:补充例子", "no_h3:例子二"],
     },
     "upgrade": {
         "expect": "学习者第一层两道题都答对：先对第二题给出反馈（点明他用对了哪条规律），"
@@ -192,13 +192,15 @@ def h3_titles(text: str) -> list[str]:
     return [m.group(1).strip() for m in re.finditer(r"^###\s+(.+)$", text, re.MULTILINE)]
 
 
-ANSWER_LINE_RE = re.compile(r"^\s*\**(?:正确)?答案\**\s*[:：]", re.MULTILINE)
+def load_check_topic():
+    """skill 自带的文档结构检查脚本，eval 直接复用它。"""
+    spec = importlib.util.spec_from_file_location("check_topic", CHECK_TOPIC_PY)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-def split_key(text: str) -> tuple[str, str]:
-    """把文档拆成正文和文末的答案部分（第一个标题里带"答案"的二级标题起）。"""
-    m = re.search(r"^##\s+[^#\n]*答案", text, re.MULTILINE)
-    return (text[:m.start()], text[m.start():]) if m else (text, "")
+check_topic = load_check_topic()
 
 
 def run_check(name: str, text: str) -> bool:
@@ -206,19 +208,8 @@ def run_check(name: str, text: str) -> bool:
     kind, _, arg = name.partition(":")
     if kind == "section_heading":
         return bool(re.search(r"^##\s+\S", text, re.MULTILINE))
-    if kind == "h2":
-        return bool(re.search(rf"^##\s+[^#\n]*{re.escape(arg)}", text, re.MULTILINE))
-    if kind == "layers":
-        lo, hi = (int(x) for x in arg.split("-"))
-        return lo <= sum(h.startswith("例子") for h in h3_titles(split_key(text)[0])) <= hi
-    if kind == "two_questions_per_layer":
-        body_heads = h3_titles(split_key(text)[0])
-        examples = sum(h.startswith("例子") for h in body_heads)
-        questions = sum(bool(re.match(r"问题[一二三四五六七八九十]+\s*$", h)) for h in body_heads)
-        return examples > 0 and questions == 2 * examples
-    if kind == "no_answer_before_key":
-        body, key = split_key(text)
-        return bool(key) and not ANSWER_LINE_RE.search(body.split("### 问题一", 1)[-1])
+    if kind == "topic_doc":
+        return not check_topic.check(text, reading=arg == "reading")
     if kind == "h3":
         return any(h.startswith(arg) for h in heads)
     if kind == "h3any":

@@ -3,6 +3,8 @@ name: progressive-learning
 description: "把一个约 25 分钟能学完的知识点写成 topic 文档，再按文档带学习者逐层学完。"
 ---
 
+# Progressive Learning
+
 ## 输入
 
 本技能没有显式的参数，输入就是当前 context 里已有的两样东西：

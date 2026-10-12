@@ -1,6 +1,6 @@
 ---
 name: topic-graph
-description: Plan and track the learning of a difficult subject as a prerequisite graph of small topic nodes — each teachable in under 20 minutes including exercises — stored as one file per node in a topic directory (with topic.yaml), where a bundled script computes locked/unlockable status, the frontier, retest queue and the next node to learn. Covers building the graph, diagnosing what the learner already knows, choosing the next node, keeping explanations and exercises from relying on unlearned concepts, and recording progress. Pairs with progressive-learning, which teaches one node at a time. Use this whenever someone wants to learn a complex topic across multiple sessions, works in a directory containing topic.yaml or nodes/, asks what to learn next, wants a roadmap or curriculum with prerequisites, or asks to be taught something too big for one short lesson (知识图谱、学习进度、下一步学什么) — even if they never say "graph".
+description: Plan and track the learning of a difficult subject as a prerequisite graph of small topic nodes — each teachable in under 25 minutes including exercises — stored as one file per node in a topic directory (with topic.yaml), where a bundled script computes locked/unlockable status, the frontier, retest queue and the next node to learn. Covers building the graph, diagnosing what the learner already knows, choosing the next node, keeping explanations and exercises from relying on unlearned concepts, and recording progress. Pairs with progressive-learning, which teaches one node at a time. Use this whenever someone wants to learn a complex topic across multiple sessions, works in a directory containing topic.yaml or nodes/, asks what to learn next, wants a roadmap or curriculum with prerequisites, or asks to be taught something too big for one short lesson (知识图谱、学习进度、下一步学什么) — even if they never say "graph".
 ---
 
 # Topic Graph
@@ -146,9 +146,9 @@ Each main-track group should have a map node near its entry and at least one syn
 
 Usually the tutor teaches and the learner never reads the source. But a well-written outside text — a good tutorial, a book chapter — can give a top-down view faster than lessons can, and a learner who chooses to read it should get credit for doing so. A **reading node** (`mode: "reading"`) assigns a short reading instead of teaching; progressive-learning gives the lesson flow. The node body lists the exact sections assigned and the claims they are meant to establish. Reading suits map nodes and motivation/history best. A mechanism that needs worked examples is still taught.
 
-### The 20-minute rule
+### The 25-minute rule
 
-Each node, including its exercises, should take under 20 minutes: one full progressive-learning run. Size nodes by these tests:
+Each node, including its exercises, should take under 25 minutes: one full progressive-learning run. Size nodes by these tests:
 
 - **One-paragraph test.** The first layer's 知识 section can be written in a short paragraph that introduces no new term besides the node's own subject. If it needs a second new term, that term is probably its own node.
 - **Ladder test.** Each later layer of progressive-learning adds one real-world variable the learner already knows, or one more piece of the node's own mechanism. If a layer would need a concept that is neither ✅ nor part of this node, the concept becomes a separate node and this node gets smaller. If the node needs more than four layers, split it.
@@ -230,7 +230,7 @@ These apply to every topic. A topic's `rules.md` adds domain rules; those take p
 
    When the material's own design is unstable and the vendor's is opaque, the field's mainstream practice (widely used open-source frameworks, standards) is usually the best anchor for "architecture" topics.
    Write each goal's `question` in `topic.yaml` (see "Big picture and meaning"): one concrete question the learner wants to be able to answer.
-2. **Chain backward.** From the goal, ask "what must be understood before this?" repeatedly until you reach things a general adult already knows or that you'll diagnose. Apply the 20-minute tests as you go. Then check the shape: each main group needs a map node near its entry and at least one synthesis node near its end.
+2. **Chain backward.** From the goal, ask "what must be understood before this?" repeatedly until you reach things a general adult already knows or that you'll diagnose. Apply the 25-minute tests as you go. Then check the shape: each main group needs a map node near its entry and at least one synthesis node near its end.
 3. **Create the directory**: `topic.yaml` (title, `[track] main`, one `[[goal]]` per goal with `targets` — the end-point nodes whose ancestors form the goal path), `rules.md`, and nodes via `graph.py add` (first `add` in a new group needs `--group-title`).
 4. **Don't build the whole domain.** Build solidly two or three layers ahead of the frontier and leave distant regions as a few coarse 🔒 stubs. The graph grows as learning reveals what's needed.
 5. **Diagnose** (section C) and `set` initial statuses.

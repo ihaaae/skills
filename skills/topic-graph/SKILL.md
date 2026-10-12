@@ -136,7 +136,7 @@ A node is one claim, one distinction, or one mechanism that the learner could st
 
 A graph built only by chaining backward is purely bottom-up: every node is a detail, and the learner meets the whole only at the very end, if at all. Good learning alternates — see the whole roughly, go down into one part, come back up and see the whole more sharply. Build that rhythm into the graph with three kinds of node:
 
-- **Map node** (top-down, at the entry of a group or a big subtree): "X consists of these parts; each part answers this question." Example: "CANopen = object dictionary + communication objects + device states + device profiles; each answers one question about a device." Teach it early, roughly, as a scaffold, and mark it a prerequisite of the group's first detail nodes. Test it by classification ("a new requirement appears — which part handles it?"), never by the parts' details. Every later detail lesson points back to its place on this map.
+- **Map node** (top-down, at the entry of a group or a big subtree): "X consists of these parts; each part answers this question." Example: "CANopen = object dictionary + communication objects + device states + device profiles; each answers one question about a device." Teach it early, roughly, as a scaffold, and mark it a prerequisite of the group's first detail nodes. Test it by classification ("a new requirement appears — which part handles it?"), never by the parts' details; one layer of classification questions is usually enough. Every later detail lesson points back to its place on this map.
 - **Mechanism / claim node** (bottom-up, the default): one claim, one distinction, one mechanism, as described above.
 - **Synthesis node** (top-down again, after several details): one cross-cutting idea that only becomes visible once the parts are known — a comparison table across them, a classification, a design trade-off. Example: "the communication objects fall into three interaction models: master/slave, client/server, producer/consumer". Its prereqs are the details it unifies. Test it by applying the classification to a case not taught before.
 
@@ -154,7 +154,7 @@ The node body lists the exact sections assigned and the claims they are meant to
 
 ### The 20-minute rule
 
-Each node, including its exercises, should take under 20 minutes: two to four layers of rising difficulty, each an example and two short questions, with knowledge introduced where a layer needs it. Size nodes by these tests:
+Each node, including its exercises, should take under 20 minutes: two to four layers of rising difficulty (a map node usually one), each an example and two short questions, with knowledge introduced where a layer needs it. Size nodes by these tests:
 
 - **One-paragraph test.** The first layer's 知识 section can be written in a short paragraph that introduces no new term besides the node's own subject. If it needs a second new term, that term is probably its own node.
 - **Ladder test.** Each later layer of progressive-learning adds one real-world variable the learner already knows, or one more piece of the node's own mechanism. If a layer would need a concept that is neither ✅ nor part of this node, the concept becomes a separate node and this node gets smaller. If the node needs more than four layers, split it.

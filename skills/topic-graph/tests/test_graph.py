@@ -148,3 +148,14 @@ def test_retro_reasons(topic):
     (topic / "retro.md").write_text("# retro\n\n## 2026-01-03\n- ok\n")
     g = graph.load(topic)
     assert g.retro_reasons(graph.dt.date(2026, 1, 4)) == []
+
+
+def test_retro_ignores_review_refresh(topic):
+    node(topic, "C1", "c1", status="mastered")
+    (topic / "retro.md").write_text("# retro\n\n## 2026-01-03\n- ok\n")
+    refresh = {"ts": "2026-01-04T10:00:00", "id": "C1", "from": "mastered", "to": "mastered"}
+    (topic / "log.jsonl").write_text(json.dumps(refresh) + "\n")
+    assert graph.load(topic).retro_reasons(graph.dt.date(2026, 1, 5)) == []
+    done = {"ts": "2026-01-04T11:00:00", "id": "C1", "from": "taught", "to": "mastered"}
+    (topic / "log.jsonl").write_text(json.dumps(done) + "\n")
+    assert graph.load(topic).retro_reasons(graph.dt.date(2026, 1, 5)) == ["C 组刚全部学完"]

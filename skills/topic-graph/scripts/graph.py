@@ -106,7 +106,9 @@ class Graph:
     def retro_reasons(self, today: dt.date | None = None) -> list[str]:
         today = today or dt.date.today()
         last = self.last_retro()
-        since = [e for e in self.log if last is None or dt.date.fromisoformat(e["ts"][:10]) > last]
+        # 复习刷新（mastered → mastered）只更新 verified，不是状态变化，不计入
+        since = [e for e in self.log if e.get("from") != e.get("to")
+                 and (last is None or dt.date.fromisoformat(e["ts"][:10]) > last)]
         why = []
         if self.log:
             gap = (today - dt.date.fromisoformat(self.log[-1]["ts"][:10])).days

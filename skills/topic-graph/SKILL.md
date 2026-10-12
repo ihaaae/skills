@@ -199,7 +199,7 @@ Verified bottom-up knowledge is necessary but not sufficient. A learner who can 
 
 **2. Every node gets more than one angle, not just the bare claim.** Objective knowledge needs interpretation to stick. When a node is written and taught, look for these angles:
 - **Motivation / history.** What problem forced this design, or what constraint makes it so? Example: CAN was born in cars with no host computer, so nobody could assign who talks — hence broadcast and arbitration.
-- **Picture.** Geometric meaning, a timeline, a layered diagram, a comparison table. Every node has at least one picture or table; its form fits the node — a flow or timeline for a mechanism, a comparison table for a distinction, a layered map for a map node.
+- **Picture.** Geometric meaning, a timeline, a layered diagram, a comparison table. Every node has at least one picture or table; its form fits the node — a flow or timeline for a mechanism, a comparison table for a distinction, a layered map for a map node. Draw it in mermaid or a Markdown table, not ASCII art (format rules: progressive-learning, 知识 → 图或表).
 - **Connection.** The same idea in a field the learner already knows: OSI layers, an analogy from software, an earlier ✅ node in another group.
 - **Consequence.** What follows for the learner's purpose (for a design-altitude learner: what it constrains in the design).
 
@@ -354,6 +354,7 @@ A ✅ records that the learner showed understanding *on that day*. Weeks later, 
 - Right → `set ID mastered` again, which refreshes `verified`.
 - Wrong → `set ID taught`. Re-teach briefly (usually one example and two questions), then set it again. The demotion warning lists the ✅ descendants to re-check.
 - Never review more than one node per lesson unless the learner asks. Review is upkeep, not the lesson.
+- Review and misconception retests serve the current goals. When the content in question lies outside them (a deferred phase, a non-goal), wait until that scope returns, even if the node is an ancestor of something on the path; a needed correction can be stated in one line without a question. (A learner was once quizzed on a correction about a deferred topic and rightly objected.)
 
 ## Writing node summaries
 

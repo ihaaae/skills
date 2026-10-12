@@ -12,7 +12,7 @@ Teaching a hard subject to someone without the background fails in three predict
 ## How this fits with progressive-learning
 
 - **topic-graph** decides *what* to learn and *in what order*: building and growing the graph, diagnosing prior knowledge, picking the next node, policing which concepts may be referenced, and persisting progress.
-- **progressive-learning** decides *how* to teach a single node: 定位 → 知识 → 例子 → 同构问题 → 解答 → 复测 → 升级 → 回到全景, in explicit modules.
+- **progressive-learning** decides *how* to teach a single node: 定位 → 知识 → 例子 → 同构问题 → 解答 → 复测 → 升级 (2–4 layers, knowledge may be layered) → 延伸 → 回到全景, in explicit modules.
 
 A node is sized so that one complete progressive-learning run fits in it. A session is: `next` → `preflight` → teach with progressive-learning → write the summary and `set` the status → repeat or stop.
 
@@ -154,11 +154,11 @@ The node body lists the exact sections assigned and the claims they are meant to
 
 ### The 20-minute rule
 
-Each node, including its exercises, should take under 20 minutes: roughly one knowledge section, three examples of rising difficulty, and six short questions. Size nodes by these tests:
+Each node, including its exercises, should take under 20 minutes: two to four layers of rising difficulty, each an example and two short questions, with knowledge introduced where a layer needs it. Size nodes by these tests:
 
-- **One-paragraph test.** The 知识 section can be written in a short paragraph that introduces no new term besides the node's own subject. If it needs a second new term, that term is probably its own node.
-- **Ladder test.** Layer 2 of progressive-learning adds exactly one real-world variable, and that variable is already known to the learner. If layer 2 or 3 would need a concept that isn't ✅ yet, the concept becomes a separate node and this node gets smaller.
-- **Question test.** You can write two isomorphic questions whose answers depend only on this node plus ✅ nodes. If you can't, the node is either too vague (sharpen the claim) or too thin (merge it into a neighbor, or make it a note on one). And every core claim of the node is hit directly by at least one question. A claim that appears only in an example was never tested, and a ✅ built on it is hollow. If six questions can't cover the claims, split the node.
+- **One-paragraph test.** The first layer's 知识 section can be written in a short paragraph that introduces no new term besides the node's own subject. If it needs a second new term, that term is probably its own node.
+- **Ladder test.** Each later layer of progressive-learning adds one real-world variable the learner already knows, or one more piece of the node's own mechanism. If a layer would need a concept that is neither ✅ nor part of this node, the concept becomes a separate node and this node gets smaller. If the node needs more than four layers, split it.
+- **Question test.** You can write two isomorphic questions whose answers depend only on this node plus ✅ nodes. If you can't, the node is either too vague (sharpen the claim) or too thin (merge it into a neighbor, or make it a note on one). And every core claim of the node is hit directly by at least one question. A claim that appears only in an example was never tested, and a ✅ built on it is hollow. If the questions of four layers can't cover the claims, split the node.
 - **Failure-point test.** If an exercise has two independent reasoning steps that could each fail for different reasons, that is two nodes.
 
 Err on the side of smaller. A node that turns out trivial costs five minutes; a node that is secretly three nodes produces a lesson where the learner answers correctly for the wrong reason and nobody notices.
@@ -282,8 +282,8 @@ Diagnosis answers "which nodes can be marked ✅ without teaching?" It runs when
 ### D. Teaching a node
 
 1. **Choose** with `graph.py next`. The ranking encodes the priorities: retests, then main-track bottlenecks on the goal path, then side nodes for a change of pace.
-2. **Pre-flight**: `graph.py preflight ID`. It refuses locked nodes. Its output is the *allowed vocabulary* for the explanation, all three examples, and every expected answer path. If a planned example needs anything outside it, either teach that node first or cut the example down. Before teaching, fill the node's body with a draft (the claims to teach, the motivation, the planned picture or table, the source anchors) and check every claim against the source. If `references/` has a text covering the node, read it first and borrow its framing (see Reference texts). Untaught nodes often have only a title. Titles are written while the graph is built, from a quicker read, and can over-claim. If the source says otherwise, correct the title first — the learner is about to be tested on it.
-3. **Teach with progressive-learning.** The node is the unit — one full run, three layers unless the node is thin enough for fewer. Teach consistently with the prereq summaries `preflight` printed. Open with the route `preflight` printed (what this node is for), and prepare the motivation and the picture or table before the lesson (see "Big picture and meaning").
+2. **Pre-flight**: `graph.py preflight ID`. It refuses locked nodes. Its output is the *allowed vocabulary* for the explanation, every example, and every expected answer path. If a planned example needs anything outside it, either teach that node first or cut the example down. Before teaching, fill the node's body with a draft (the claims to teach, the motivation, the planned picture or table, the source anchors) and check every claim against the source. If `references/` has a text covering the node, read it first and borrow its framing (see Reference texts). Untaught nodes often have only a title. Titles are written while the graph is built, from a quicker read, and can over-claim. If the source says otherwise, correct the title first — the learner is about to be tested on it.
+3. **Teach with progressive-learning.** The node is the unit — one full run of two to four layers, as many as the node needs. Teach consistently with the prereq summaries `preflight` printed. Open with the route `preflight` printed (what this node is for), and prepare the motivation and the picture or table before the lesson (see "Big picture and meaning").
 4. **Mid-lesson gaps.** If the learner's question or a needed step reaches outside ✅ territory, stop and say what node it belongs to. If none exists, `graph.py add` it. Then either switch to it (and return) or mark the boundary explicitly and continue, recording a debt.
 5. **Record.** Write the node's summary into its file (below), then `graph.py set`. Every layer's two questions correct → `mastered`. Session ended mid-node, or content delivered without retest → `taught`, with a note in the body of where it stopped. A wrong second retest means not mastered, regardless of the first answer.
 

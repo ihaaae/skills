@@ -1,0 +1,523 @@
+#!/usr/bin/env python3
+"""progressive-learning 的对比 eval：同一个场景，带 skill 和不带 skill 各写一遍下一轮回复，再比较。
+
+  python3 eval/run.py                              # 跑 cases/ 下所有用例（Learn 用例需要 --learn-dir）
+  python3 eval/run.py --learn-dir ~/Learn          # 加上从 Learn 仓库现取内容的真实用例
+  python3 eval/run.py --only P04,L-C12 --reps 2
+  python3 eval/run.py --dry-run                    # 只组装提示词写到 out/，不调用模型
+  uv run --with anthropic eval/run.py --backend api  # 改走 Claude API（按 token 计费）
+
+两层评分，分开报告：
+  1. 格式检查（脚本判定）：输出有没有照 skill 规定的模块和节奏写。只说明 skill 被遵守，不说明教得好。
+  2. 盲评（模型判定）：裁判不看 skill，按 eval/judge.md 的学习者视角标准逐项比较两份输出，
+     正反两种顺序各判一次，两次一致才算胜负，否则记平局。
+
+默认后端是 `claude -p`（走 Claude Code 订阅，不需要 API key）。它不能直接传入多轮历史，
+所以历史对话被拼成一段文字放进提示里；--backend api 则按真实的多轮消息发送。
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import random
+import re
+import subprocess
+import sys
+import tempfile
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent            # dev/progressive-learning/eval
+DEV = HERE.parent                                 # dev/progressive-learning
+REPO = DEV.parent.parent                          # 仓库根
+SKILL = REPO / "skills" / "progressive-learning" / "SKILL.md"
+TOPIC_GRAPH_SKILL = REPO / "skills" / "topic-graph" / "SKILL.md"
+GRAPH_PY = REPO / "skills" / "topic-graph" / "scripts" / "graph.py"
+CASES_DIR = DEV / "cases"
+FIXTURES = CASES_DIR / "fixtures"
+
+API_MODELS = {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5-5", "haiku": "claude-haiku-5-5"}
+CONDITIONS = ("skill", "baseline")
+
+# 每个阶段：这一轮应该达到什么（给裁判的结果描述），以及格式检查。
+STAGES = {
+    "opening": {
+        "expect": "开始教一个新知识点的第一轮：让学习者知道这节课为什么要学、通往什么目标，"
+                  "讲清核心原理及其动机，配一张帮助理解的图或表；这一轮只讲新内容，不出题，"
+                  "讲完停下来让学习者提问或说继续。",
+        "checks": ["section_heading", "h3:定位", "h3:知识", "diagram", "no_h3:例子", "no_h3:问题", "no_options"],
+    },
+    "scope": {
+        "expect": "学习者没有图谱、只说想学一个主题：先用一两个场景化的小问题确认最关键的前置知识，"
+                  "或判断主题是否太大需要先拆分；不要一上来把整个主题讲完。",
+        "checks": ["no_h3:例子", "no_h3:问题解答"],
+    },
+    "example": {
+        "expect": "学习者读完知识部分说继续：给一个完整、具体、最简单的例子，写成'一个明确的问题 + 按步骤解答'，"
+                  "最后压成一条可以照着用的判断方法；这一轮不出题，讲完停下。",
+        "checks": ["h3:例子一", "no_h3:问题", "no_options"],
+    },
+    "question": {
+        "expect": "学习者读完例子说继续：出一道和例子同构的题（只换表面条件，不加新概念），"
+                  "最好是 4～5 个选项的单选题；只出题，不给答案，停下等回答。",
+        "checks": ["h3:问题一", "options:4-5", "no_h3:问题解答", "no_h3:例子"],
+    },
+    "feedback_wrong": {
+        "expect": "学习者答错了：明确说答错，指出他的推理具体在哪一步偏了（对照例子里的方法），"
+                  "不要只公布答案；然后再给一道同样难度、高度相似的题验证，停下等回答。",
+        "checks": ["h3:问题解答一", "h3:问题二", "options:4-5", "no_h3:例子二"],
+    },
+    "retest_fail": {
+        "expect": "学习者第一题答对、第二道复测题答错：判断并说明错在哪一步；第一次答对不算掌握，"
+                  "不能升级到更难的内容，应回到当前层用更简单或更接近原例子的方式重新解释，再测。",
+        "checks": ["h3:问题解答二", "no_h3:例子二"],
+    },
+    "upgrade": {
+        "expect": "学习者第一层两道题都答对：先对第二题给出反馈（点明他用对了哪条规律），"
+                  "再进入下一层：给一个在原理不变的基础上只多一个现实变量的新例子；这一轮不出新题。",
+        "checks": ["h3:问题解答二", "h3:例子二", "no_h3:问题三"],
+    },
+    "missing_prereq": {
+        "expect": "学习者的提问暴露出他缺少一个还没学过的前置概念：不要在当前课里用两句话顺手补上，"
+                  "而是停下来说明需要先学这个前置，建议把它作为单独的知识点学完再回来（或明确标注边界后继续）。",
+        "checks": ["no_h3:问题二", "no_h3:例子二"],
+    },
+    "reading": {
+        "expect": "这是一个阅读节点：说明这节课的定位，布置具体的阅读任务（读哪篇哪几节、预计用时），"
+                  "给两三个带着读的引导问题，然后停下等学习者读完；不要自己把材料内容讲一遍，不出题。",
+        "checks": ["h3:定位", "h3:阅读任务", "no_h3:问题", "no_h3:例子"],
+    },
+    "plain_question": {
+        "expect": "学习者只是问一个简单的事实性问题，并不想系统学习：直接、简洁地回答即可，"
+                  "不需要展开成一整节课。",
+        "checks": ["no_h3:问题一", "no_h3:例子一"],
+    },
+}
+
+BASELINE_SYSTEM = """你是一个耐心的学习助手，帮助用户学习。下面附上用户的工作区说明和本专题的规则，以及管理学习进度用的 topic-graph skill。\
+本环境里你不能调用工具：需要的命令输出会直接写在用户消息里。只写出你的下一条回复。"""
+
+SKILL_SYSTEM = """你是一个耐心的学习助手，帮助用户学习。下面附上用户的工作区说明和本专题的规则，以及管理学习进度用的 topic-graph skill，\
+和讲课用的 progressive-learning skill。教学时遵循 progressive-learning skill。\
+本环境里你不能调用工具：需要的命令输出会直接写在用户消息里。只写出你的下一条回复。"""
+
+
+# ---------------------------------------------------------------- 用例
+
+def load_cases(paths: list[Path], learn_dir: Path | None) -> list[dict]:
+    cases = []
+    for path in paths:
+        for n, line in enumerate(path.read_text().splitlines(), 1):
+            if not line.strip():
+                continue
+            case = json.loads(line)
+            case["_file"] = f"{path.name}:{n}"
+            if case.get("source") == "learn":
+                if learn_dir is None:
+                    continue
+                case = materialize_learn_case(case, learn_dir)
+            case["turns"] = [resolve_turn(t) for t in case["turns"]]
+            for key in ("context", "learner"):
+                if f"{key}_ref" in case:
+                    case[key] = (FIXTURES / case.pop(f"{key}_ref")).read_text().strip()
+            stage = STAGES[case["stage"]]
+            case.setdefault("expect", stage["expect"])
+            case.setdefault("checks", stage["checks"])
+            case.setdefault("watch", [])
+            case.setdefault("learner", "")
+            case.setdefault("context", "")
+            case["_hash"] = hashlib.sha256(
+                json.dumps({k: case[k] for k in ("context", "learner", "turns", "watch")},
+                           ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:12]
+            cases.append(case)
+    return cases
+
+
+def resolve_turn(turn: dict) -> dict:
+    if "ref" in turn:
+        return {"role": turn["role"], "content": (FIXTURES / turn["ref"]).read_text().strip()}
+    return turn
+
+
+FEEDBACK_RE = re.compile(r"^\**(措辞|易错点|课上插问|精确化)")
+
+
+def materialize_learn_case(case: dict, learn_dir: Path) -> dict:
+    """从 Learn 仓库现取内容：工作区说明、专题规则、preflight 输出，以及节点里记下的学习者反馈。
+
+    preflight 里"本节点已有内容"一节是课后写的摘要（含答题结果和学习者的纠正），
+    会把答案透露给被测模型，所以替换掉，只保留节点标题。
+    """
+    topic = learn_dir / case["topic"]
+    node_id = case["node"]
+    node_file = next(topic.glob(f"nodes/*/{node_id}.md"))
+    out = subprocess.run(["uv", "run", "--quiet", str(GRAPH_PY), "preflight", node_id],
+                         cwd=topic, capture_output=True, text=True, timeout=120, check=False)
+    if out.returncode != 0:
+        raise SystemExit(f"{case['id']}: preflight 失败\n{out.stdout}\n{out.stderr}")
+    preflight = out.stdout.split("—— 本节点已有内容 ——")[0].rstrip() + "\n\n—— 本节点已有内容 ——\n(尚无)\n"
+    preflight = "\n".join(l for l in preflight.splitlines() if "已是 ✅" not in l)
+    preflight = re.sub(r"^(✓ \S+ 可以讲  )\[\S+\]", r"\1[🔓]", preflight, count=1, flags=re.MULTILINE)
+
+    body = node_file.read_text()
+    watch = [para.strip() for para in re.split(r"\n\s*\n", body) if FEEDBACK_RE.match(para.strip())]
+    workspace = (learn_dir / "AGENTS.md").read_text()
+    rules = (topic / "rules.md").read_text() if (topic / "rules.md").exists() else ""
+    case = dict(case)
+    case["context"] = f"# 工作区说明（AGENTS.md）\n\n{workspace}\n\n# 本专题规则（{case['topic']}/rules.md）\n\n{rules}"
+    case["learner"] = workspace.split("## 学习者偏好", 1)[-1].strip()
+    case["watch"] = case.get("watch", []) + watch
+    case["turns"] = [{"role": "user", "content":
+                      f"开始学 {node_id}。\n\n[graph.py preflight {node_id} 的输出]\n{preflight}"}]
+    return case
+
+
+# ---------------------------------------------------------------- 格式检查
+
+OPTION_RE = re.compile(r"^\s*(?:[-*]\s*)?\**([A-E])[.、．):：]\s*\S", re.MULTILINE)
+
+
+def h3_titles(text: str) -> list[str]:
+    return [m.group(1).strip() for m in re.finditer(r"^###\s+(.+)$", text, re.MULTILINE)]
+
+
+def run_check(name: str, text: str) -> bool:
+    heads = h3_titles(text)
+    kind, _, arg = name.partition(":")
+    if kind == "section_heading":
+        return bool(re.search(r"^##\s+\S", text, re.MULTILINE))
+    if kind == "h3":
+        return any(h.startswith(arg) for h in heads)
+    if kind == "no_h3":
+        return not any(h.startswith(arg) for h in heads)
+    if kind == "diagram":
+        has_mermaid = "```mermaid" in text
+        has_table = bool(re.search(r"^\|.*\|\s*\n\|\s*:?-{3,}", text, re.MULTILINE))
+        return has_mermaid or has_table
+    if kind == "no_options":
+        return len(set(OPTION_RE.findall(text))) < 3
+    if kind == "options":
+        lo, hi = (int(x) for x in arg.split("-"))
+        return lo <= len(set(OPTION_RE.findall(text))) <= hi
+    raise ValueError(f"未知检查 {name}")
+
+
+# ---------------------------------------------------------------- 模型调用
+
+def flatten(turns: list[dict]) -> str:
+    """claude -p 只接受一条用户消息：把历史拼成文字，最后一条用户消息单独放。"""
+    *history, last = turns
+    if not history:
+        return last["content"]
+    parts = ["以下是到目前为止的对话记录。请以助手的身份，只写出对最后一条用户消息的下一条回复。", "<对话记录>"]
+    for t in history:
+        parts.append(("[用户]" if t["role"] == "user" else "[助手]") + "\n" + t["content"])
+    parts += ["</对话记录>", "[用户最新消息]\n" + last["content"]]
+    return "\n\n".join(parts)
+
+
+class ClaudeCLI:
+    """`claude -p`：safe mode 关掉本机的 skill、CLAUDE.md、hook 和插件，免得本机装的 skill 混进 baseline。"""
+
+    def __init__(self, effort: str | None):
+        self.effort = effort
+        self.cwd = tempfile.mkdtemp(prefix="pl-eval-")
+
+    def call(self, model: str, system: str, turns: list[dict], schema: dict | None = None) -> dict:
+        sp = Path(self.cwd) / f"system-{hashlib.sha256(system.encode()).hexdigest()[:16]}.md"
+        if not sp.exists():
+            sp.write_text(system)
+        cmd = ["claude", "-p", "--safe-mode", "--tools", "", "--no-session-persistence",
+               "--system-prompt-file", str(sp), "--model", model, "--output-format", "json"]
+        if self.effort:
+            cmd += ["--effort", self.effort]
+        if schema:
+            cmd += ["--json-schema", json.dumps(schema)]
+        t0 = time.time()
+        proc = subprocess.run(cmd, input=flatten(turns), capture_output=True, text=True,
+                              cwd=self.cwd, timeout=900, check=False)
+        try:
+            data = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            raise RuntimeError(f"claude -p 没有返回 JSON（exit {proc.returncode}）：{proc.stderr[-800:] or proc.stdout[-800:]}")
+        if data.get("is_error") or data.get("subtype") != "success":
+            raise RuntimeError(f"claude -p 出错：{data.get('subtype')} {data.get('api_error_status')} {data.get('result', '')[:300]}")
+        served = list((data.get("modelUsage") or {}).keys())
+        return {"text": data.get("result") or "", "json": data.get("structured_output"),
+                "served": served, "cost_usd": data.get("total_cost_usd"),
+                "seconds": round(time.time() - t0, 1), "stop_reason": data.get("stop_reason")}
+
+
+class ClaudeAPI:
+    """Anthropic Messages API：真实的多轮消息。需要 `anthropic` 包和凭据（ANTHROPIC_API_KEY 或 ant auth login）。
+
+    有意不开 server-side fallbacks：fallback 会换模型作答，eval 就不知道分数属于哪个模型了。
+    遇到 refusal 记为错误。
+    """
+
+    def __init__(self, effort: str | None):
+        import anthropic
+        self.anthropic = anthropic
+        self.client = anthropic.Anthropic(max_retries=4)
+        self.effort = effort
+
+    def call(self, model: str, system: str, turns: list[dict], schema: dict | None = None) -> dict:
+        model_id = API_MODELS.get(model, model)
+        kwargs = {"model": model_id, "max_tokens": 16000, "system": system,
+                  "messages": [{"role": t["role"], "content": t["content"]} for t in turns]}
+        output_config = {}
+        if self.effort:
+            output_config["effort"] = self.effort
+        if schema:
+            output_config["format"] = {"type": "json_schema", "schema": schema}
+        if output_config:
+            kwargs["output_config"] = output_config
+        t0 = time.time()
+        resp = self.client.messages.create(**kwargs)
+        if resp.stop_reason in ("refusal", "max_tokens"):
+            raise RuntimeError(f"stop_reason={resp.stop_reason}")
+        if not resp.model.startswith(model_id):
+            raise RuntimeError(f"请求 {model_id}，实际由 {resp.model} 作答")
+        text = "".join(b.text for b in resp.content if b.type == "text")
+        return {"text": text, "json": json.loads(text) if schema else None, "served": [resp.model],
+                "cost_usd": None, "usage": resp.usage.to_dict(), "seconds": round(time.time() - t0, 1),
+                "stop_reason": resp.stop_reason}
+
+
+# ---------------------------------------------------------------- 写作与评审
+
+def system_prompt(case: dict, condition: str) -> str:
+    parts = [SKILL_SYSTEM if condition == "skill" else BASELINE_SYSTEM]
+    if case["context"]:
+        parts.append(case["context"])
+    parts.append("# topic-graph skill\n\n" + TOPIC_GRAPH_SKILL.read_text())
+    if condition == "skill":
+        parts.append("# progressive-learning skill\n\n" + SKILL.read_text())
+    return "\n\n---\n\n".join(parts)
+
+
+JUDGE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "criteria": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "winner": {"type": "string", "enum": ["A", "B", "tie", "na"]},
+                    "reason": {"type": "string"},
+                },
+                "required": ["id", "winner", "reason"],
+                "additionalProperties": False,
+            },
+        },
+        "overall": {"type": "string", "enum": ["A", "B", "tie"]},
+        "overall_reason": {"type": "string"},
+    },
+    "required": ["criteria", "overall", "overall_reason"],
+    "additionalProperties": False,
+}
+
+CRITERIA = ["readable", "taught_only", "accurate", "meaning", "pacing", "task", "watch"]
+
+
+def judge_prompt(case: dict, a: str, b: str) -> str:
+    history = flatten(case["turns"]) if len(case["turns"]) > 1 else case["turns"][0]["content"]
+    watch = "\n".join(f"- {w}" for w in case["watch"]) or "（无）"
+    return f"""## 学习者
+{case['learner'] or '一位聪明、但没有这个领域背景的成年学习者。'}
+
+## 这一轮之前的对话（被评审的回复要接在它后面）
+<对话>
+{history}
+</对话>
+
+## 这一轮应该达到的效果
+{case['expect']}
+
+## 这位学习者以前在类似课上指出过的问题（criterion watch 用）
+{watch}
+
+## 回复 A
+<回复A>
+{a}
+</回复A>
+
+## 回复 B
+<回复B>
+{b}
+</回复B>
+"""
+
+
+def judge(backend, model: str, case: dict, outputs: dict, rng: random.Random) -> dict:
+    """正反两种顺序各判一次；同一项两次一致才算胜负，否则记平局。"""
+    system = (HERE / "judge.md").read_text()
+    first_skill_is_a = rng.random() < 0.5
+    rounds = []
+    for skill_is_a in (first_skill_is_a, not first_skill_is_a):
+        a, b = (outputs["skill"], outputs["baseline"]) if skill_is_a else (outputs["baseline"], outputs["skill"])
+        r = backend.call(model, system, [{"role": "user", "content": judge_prompt(case, a, b)}], JUDGE_SCHEMA)
+        verdict = r["json"] or {}
+
+        def who(w, skill_is_a=skill_is_a):
+            return {"A": "skill" if skill_is_a else "baseline",
+                    "B": "baseline" if skill_is_a else "skill"}.get(w, w)
+
+        rounds.append({"skill_is_a": skill_is_a, "served": r["served"], "cost_usd": r["cost_usd"],
+                       "criteria": {c["id"]: {"winner": who(c["winner"]), "reason": c["reason"]}
+                                    for c in verdict.get("criteria", [])},
+                       "overall": who(verdict.get("overall")), "overall_reason": verdict.get("overall_reason")})
+    merged = {}
+    for cid in CRITERIA + ["overall"]:
+        if cid == "overall":
+            w1, w2 = rounds[0]["overall"], rounds[1]["overall"]
+        else:
+            w1 = rounds[0]["criteria"].get(cid, {}).get("winner")
+            w2 = rounds[1]["criteria"].get(cid, {}).get("winner")
+        if w1 is None or w2 is None:
+            merged[cid] = "missing"
+        elif w1 == w2:
+            merged[cid] = w1
+        elif "na" in (w1, w2):
+            merged[cid] = "na"
+        else:
+            merged[cid] = "tie"
+    return {"merged": merged, "rounds": rounds}
+
+
+def run_one(backend, args, case: dict, rep: int, out_dir: Path) -> dict:
+    row = {"id": case["id"], "stage": case["stage"], "rep": rep, "case_hash": case["_hash"],
+           "writer_model": args.model, "judge_model": args.judge_model, "backend": args.backend}
+    outputs = {}
+    for cond in CONDITIONS:
+        r = backend.call(args.model, system_prompt(case, cond), case["turns"])
+        outputs[cond] = r["text"]
+        row[cond] = {"served": r["served"], "cost_usd": r["cost_usd"], "seconds": r["seconds"],
+                     "chars": len(r["text"]), "checks": {c: run_check(c, r["text"]) for c in case["checks"]}}
+        (out_dir / "outputs" / f"{case['id']}__{cond}__r{rep}.md").write_text(r["text"])
+    rng = random.Random(f"{case['id']}:{rep}")
+    row["judge"] = judge(backend, args.judge_model, case, outputs, rng)
+    return row
+
+
+# ---------------------------------------------------------------- 汇总
+
+def tally(values):
+    return {k: sum(1 for v in values if v == k) for k in ("skill", "baseline", "tie", "na", "missing")}
+
+
+def write_summary(rows: list[dict], errors: list[dict], out_dir: Path, args) -> str:
+    lines = [f"# progressive-learning eval：{out_dir.name}", "",
+             (f"写作 `{args.model}`，裁判 `{args.judge_model}`，后端 `{args.backend}`，"
+              f"{len({r['id'] for r in rows})} 个用例 × {args.reps} 轮，{len(rows)} 组成功，{len(errors)} 组出错。"), ""]
+
+    overall = tally([r["judge"]["merged"]["overall"] for r in rows])
+    lines += ["## 盲评总体偏好", "",
+              (f"skill 胜 {overall['skill']}，baseline 胜 {overall['baseline']}，平局 {overall['tie']}"
+               "（正反顺序判断不一致也记平局）。"), ""]
+    lines += ["## 盲评分项", "", "| 标准 | skill | baseline | 平局 | 不适用 |", "|---|---|---|---|---|"]
+    for cid in CRITERIA:
+        t = tally([r["judge"]["merged"][cid] for r in rows])
+        lines.append(f"| {cid} | {t['skill']} | {t['baseline']} | {t['tie']} | {t['na'] + t['missing']} |")
+
+    lines += ["", "## 格式检查（是否照 skill 的模块与节奏写；不代表教得好）", "",
+              "| 条件 | 全部通过的输出 | 单项通过率 |", "|---|---|---|"]
+    for cond in CONDITIONS:
+        checks = [r[cond]["checks"] for r in rows]
+        full = sum(all(c.values()) for c in checks)
+        items = [v for c in checks for v in c.values()]
+        rate = f"{sum(items)}/{len(items)}" if items else "-"
+        lines.append(f"| {cond} | {full}/{len(checks)} | {rate} |")
+
+    lines += ["", "## 逐个用例", "", "| 用例 | 阶段 | 轮 | 总体 | 格式 skill | 格式 baseline | 分项（skill/baseline/平） |",
+              "|---|---|---|---|---|---|---|"]
+    for r in sorted(rows, key=lambda r: (r["id"], r["rep"])):
+        m = r["judge"]["merged"]
+        t = tally([m[c] for c in CRITERIA])
+        fmt = {c: f"{sum(r[c]['checks'].values())}/{len(r[c]['checks'])}" for c in CONDITIONS}
+        lines.append(f"| {r['id']} | {r['stage']} | {r['rep']} | {m['overall']} | {fmt['skill']} | {fmt['baseline']} "
+                     f"| {t['skill']}/{t['baseline']}/{t['tie']} |")
+
+    cost = [x for r in rows for x in [r["skill"]["cost_usd"], r["baseline"]["cost_usd"]]
+            + [rd["cost_usd"] for rd in r["judge"]["rounds"]] if x is not None]
+    if cost:
+        lines += ["", f"按 API 标价折算的费用约 ${sum(cost):.2f}（走订阅时不另外计费，只占用量额度）。"]
+    served = sorted({m for r in rows for c in CONDITIONS for m in r[c]["served"]})
+    lines += [f"实际作答的模型：{', '.join(served)}。"]
+    if errors:
+        lines += ["", "## 出错（未计入上面的统计）", ""] + [f"- {e['id']} r{e['rep']}：{e['error']}" for e in errors]
+    lines += ["", "用例少时，几个用例的胜负就能让比例大幅摆动；看逐个用例和 outputs/ 里的原文，比只看总数可靠。"]
+    text = "\n".join(lines) + "\n"
+    (out_dir / "summary.md").write_text(text)
+    return text
+
+
+# ---------------------------------------------------------------- 入口
+
+def main() -> int:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--cases", nargs="*", type=Path, default=sorted(CASES_DIR.glob("*.jsonl")))
+    p.add_argument("--learn-dir", type=Path, help="本地 Learn 仓库；不给就跳过 source=learn 的用例")
+    p.add_argument("--only", help="逗号分隔的用例 ID")
+    p.add_argument("--reps", type=int, default=1)
+    p.add_argument("--model", default="opus", help="写作模型（claude -p 的别名，或 API 模型 ID）")
+    p.add_argument("--judge-model", default="sonnet", help="裁判模型；默认和写作模型不同，避免自己给自己打分")
+    p.add_argument("--effort", help="low|medium|high|xhigh|max，不给就用默认值")
+    p.add_argument("--backend", choices=["cli", "api"], default="cli")
+    p.add_argument("--jobs", type=int, default=3, help="并发数；订阅有用量上限，不宜太大")
+    p.add_argument("--out", type=Path, help="输出目录，默认 out/<时间>")
+    p.add_argument("--dry-run", action="store_true", help="只写出组装好的提示词，不调用模型")
+    args = p.parse_args()
+
+    cases = load_cases(args.cases, args.learn_dir.expanduser() if args.learn_dir else None)
+    if args.only:
+        wanted = set(args.only.split(","))
+        cases = [c for c in cases if c["id"] in wanted]
+    if not cases:
+        print("没有可跑的用例（Learn 用例需要 --learn-dir）。", file=sys.stderr)
+        return 1
+
+    out_dir = args.out or DEV / "out" / datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
+    (out_dir / "outputs").mkdir(parents=True, exist_ok=True)
+
+    if args.dry_run:
+        pdir = out_dir / "prompts"
+        pdir.mkdir(exist_ok=True)
+        for c in cases:
+            for cond in CONDITIONS:
+                (pdir / f"{c['id']}__{cond}.md").write_text(
+                    f"<!-- system -->\n{system_prompt(c, cond)}\n\n<!-- user -->\n{flatten(c['turns'])}\n")
+            (pdir / f"{c['id']}__judge.md").write_text(judge_prompt(c, "（skill 的输出）", "（baseline 的输出）"))
+        print(f"{len(cases)} 个用例的提示词写到 {pdir}")
+        return 0
+
+    backend = ClaudeCLI(args.effort) if args.backend == "cli" else ClaudeAPI(args.effort)
+    jobs = [(c, rep) for c in cases for rep in range(1, args.reps + 1)]
+    rows, errors = [], []
+    with ThreadPoolExecutor(max_workers=args.jobs) as pool, (out_dir / "results.jsonl").open("w") as fout:
+        futures = {pool.submit(run_one, backend, args, c, rep, out_dir): (c, rep) for c, rep in jobs}
+        for fut in as_completed(futures):
+            c, rep = futures[fut]
+            try:
+                row = fut.result()
+            except Exception as e:  # noqa: BLE001  基础设施错误单独记，不当成模型输了
+                errors.append({"id": c["id"], "rep": rep, "error": f"{type(e).__name__}: {e}"})
+                print(f"✗ {c['id']} r{rep}: {e}", file=sys.stderr)
+                continue
+            rows.append(row)
+            fout.write(json.dumps(row, ensure_ascii=False) + "\n")
+            fout.flush()
+            print(f"✓ {c['id']} r{rep}: 总体 {row['judge']['merged']['overall']}", file=sys.stderr)
+    (out_dir / "errors.jsonl").write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in errors))
+    print(write_summary(rows, errors, out_dir, args))
+    return 0 if rows else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

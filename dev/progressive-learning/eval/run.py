@@ -10,6 +10,7 @@
   python3 eval/run.py --dry-run                    # 只组装提示词写到 out/，不调用模型
   python3 eval/run.py --rejudge out/<上次> --judge-model sonnet   # 沿用上次的回复，换裁判重新评审
   python3 eval/run.py --against /tmp/old-SKILL.md  # 新旧两版 skill 对比（baseline 一边用旧版）
+  # 两边都会一并读入 SKILL.md 同目录的 modules.md、questions.md（有的话）；拷旧版时连它们一起拷
   uv run --with anthropic eval/run.py --backend api  # 改走 Claude API（按 token 计费）
 
 两层评分，分开报告：
@@ -315,6 +316,19 @@ class ClaudeAPI:
 SKILL_FILES = {"skill": SKILL, "baseline": None}   # --skill / --against 会改这里
 
 
+SKILL_REFERENCES = ["modules.md", "questions.md"]   # SKILL.md 让 agent 写文档前读完的参考文档
+
+
+def skill_text(skill_file: Path) -> str:
+    """SKILL.md 加上同目录的参考文档。"""
+    parts = [skill_file.read_text()]
+    for name in SKILL_REFERENCES:
+        ref = skill_file.parent / name
+        if ref.exists():
+            parts.append(f"# {name}\n\n{ref.read_text()}")
+    return "\n\n".join(parts)
+
+
 def system_prompt(case: dict, condition: str) -> str:
     skill_file = SKILL_FILES[condition]
     parts = [SKILL_SYSTEM if skill_file else BASELINE_SYSTEM]
@@ -322,7 +336,7 @@ def system_prompt(case: dict, condition: str) -> str:
         parts.append(case["context"])
     parts.append("# topic-graph skill\n\n" + TOPIC_GRAPH_SKILL.read_text())
     if skill_file:
-        parts.append("# progressive-learning skill\n\n" + skill_file.read_text())
+        parts.append("# progressive-learning skill\n\n" + skill_text(skill_file))
     return "\n\n---\n\n".join(parts)
 
 

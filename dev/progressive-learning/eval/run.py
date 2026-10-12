@@ -55,7 +55,7 @@ STAGES = {
                   "核心原理及其动机，配图或表；之后是逐层加深的例子和题目，每道题都能只靠前面讲过的内容"
                   "和学习者已有的知识解出来；答案和解析放在文末，学习者从头读时不会先看到答案。",
         "checks": ["section_heading", "h3:定位", "h3:知识", "h3:例子一", "h3:问题一", "h3:问题二", "diagram",
-                   "h2:答案", "layers:1-4", "two_questions_per_layer", "no_answer_before_key"],
+                   "h2:答案", "layers:2-4", "two_questions_per_layer", "no_answer_before_key"],
     },
     "reading_document": {
         "expect": "这个知识点要求学习者去读一段指定的材料，学习者要求先写成 topic 文档：说明这节课的定位，"

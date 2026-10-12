@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """progressive-learning 的对比 eval：同一个场景，带 skill 和不带 skill 各写一遍下一轮回复，再比较。
 
-用例分两类：写 topic 文档的那一轮（document 等阶段，回复就是整份文档），
-以及文档写好之后按文档上课的某一轮（文档放进上下文）。
+用例都是写 topic 文档的那一轮：回复就是整份文档（或者说明为什么不写）。
+上课由 skill 自带的 lesson.py 控制进度，这里不测。
 
   python3 eval/run.py                              # 跑 cases/ 下所有用例（Learn 用例需要 --learn-dir）
   python3 eval/run.py --learn-dir ~/Learn          # 加上从 Learn 仓库现取内容的真实用例
@@ -70,33 +70,9 @@ STAGES = {
                   "不要勉强写出文档，而是告诉学习者它太大在哪里、可以怎样拆。",
         "checks": ["no_h3:例子一", "no_h3:问题一"],
     },
-    "opening": {
-        "expect": "这节课的 topic 文档已经写好，现在开始上课的第一轮：让学习者知道这节课为什么要学、通往什么目标，"
-                  "讲清核心原理及其动机，配一张帮助理解的图或表；这一轮只讲新内容，不出题，"
-                  "讲完停下来让学习者提问或说继续。",
-        "checks": ["section_heading", "h3:定位", "h3:知识", "diagram", "no_h3:例子", "no_h3:问题", "no_options"],
-    },
-    "feedback_wrong": {
-        "expect": "学习者答错了：明确说答错，指出他的推理具体在哪一步偏了（对照例子里的方法），"
-                  "不要只公布答案；然后再给一道同样难度、高度相似的题验证，停下等回答。",
-        "checks": ["h3:问题解答一", "h3:问题二", "options:4-5", "no_h3:例子二"],
-    },
-    "retest_fail": {
-        "expect": "学习者第一题答对、第二道复测题答错：判断并说明错在哪一步；第一次答对不算掌握，"
-                  "不能升级到更难的内容，应回到当前层用更简单或更接近原例子的方式重新解释，再测"
-                  "（复测题可以紧跟在重讲之后，也可以等学习者读完重讲再给，两种都可以）。",
-        "checks": ["h3:问题解答二", "h3:补充例子", "no_h3:例子二"],
-    },
-    "upgrade": {
-        "expect": "学习者第一层两道题都答对：先对第二题给出反馈（点明他用对了哪条规律），"
-                  "再进入下一层，给出这一层的第一块新内容：一段新的知识，或者一个在原理不变的基础上多一个现实变量的新例子；"
-                  "这一轮不出新题。",
-        "checks": ["h3:问题解答二", "h3any:例子二|知识二", "no_h3:问题三"],
-    },
 }
 
-# 写文档的阶段：在最后一条用户消息后面加上这段请求。
-DOC_STAGES = {"document", "reading_document", "too_big"}
+# 每个用例都在最后一条用户消息后面加上这段请求。
 DOC_REQUEST = ("请先把这节课写成一份完整的 topic 文档（含全部题目，答案集中放在文末），写好后我们再按文档上课。"
                "本环境不能写文件，直接把文档作为回复输出。")
 
@@ -123,15 +99,11 @@ def load_cases(paths: list[Path], learn_dir: Path | None) -> list[dict]:
                     continue
                 case = materialize_learn_case(case, learn_dir)
             case["turns"] = [resolve_turn(t) for t in case["turns"]]
-            if case["stage"] in DOC_STAGES:
-                last = case["turns"][-1]
-                case["turns"][-1] = {**last, "content": last["content"] + "\n\n" + DOC_REQUEST}
-            for key in ("context", "learner", "doc"):
+            last = case["turns"][-1]
+            case["turns"][-1] = {**last, "content": last["content"] + "\n\n" + DOC_REQUEST}
+            for key in ("context", "learner"):
                 if f"{key}_ref" in case:
                     case[key] = (FIXTURES / case.pop(f"{key}_ref")).read_text().strip()
-            if case.get("doc"):
-                case["context"] = (case.get("context", "") + "\n\n# 本节课的 topic 文档（已写好，上课时按它的顺序走）\n\n"
-                                   + case.pop("doc")).strip()
             stage = STAGES[case["stage"]]
             case.setdefault("expect", stage["expect"])
             case.setdefault("checks", stage["checks"])
@@ -186,9 +158,6 @@ def materialize_learn_case(case: dict, learn_dir: Path) -> dict:
 
 # ---------------------------------------------------------------- 格式检查
 
-OPTION_RE = re.compile(r"^\s*(?:[-*]\s*)?\**([A-E])[.、．):：]\s*\S", re.MULTILINE)
-
-
 def h3_titles(text: str) -> list[str]:
     return [m.group(1).strip() for m in re.finditer(r"^###\s+(.+)$", text, re.MULTILINE)]
 
@@ -207,25 +176,12 @@ check_topic = load_check_topic()
 def run_check(name: str, text: str) -> bool:
     heads = h3_titles(text)
     kind, _, arg = name.partition(":")
-    if kind == "section_heading":
-        return bool(re.search(r"^##\s+\S", text, re.MULTILINE))
     if kind == "topic_doc":
         return not check_topic.check(text, reading=arg == "reading")
     if kind == "h3":
         return any(h.startswith(arg) for h in heads)
-    if kind == "h3any":
-        return any(h.startswith(a) for a in arg.split("|") for h in heads)
     if kind == "no_h3":
         return not any(h.startswith(arg) for h in heads)
-    if kind == "diagram":
-        has_mermaid = "```mermaid" in text
-        has_table = bool(re.search(r"^\|.*\|\s*\n\|\s*:?-{3,}", text, re.MULTILINE))
-        return has_mermaid or has_table
-    if kind == "no_options":
-        return len(set(OPTION_RE.findall(text))) < 3
-    if kind == "options":
-        lo, hi = (int(x) for x in arg.split("-"))
-        return lo <= len(set(OPTION_RE.findall(text))) <= hi
     raise ValueError(f"未知检查 {name}")
 
 

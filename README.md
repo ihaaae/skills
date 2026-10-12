@@ -35,7 +35,7 @@ npx skills remove ihaaae/skills -g
 | [fleet-ocr](skills/fleet-ocr) | 通过私有 HTTP OCR API 将 PDF 识别为 Markdown/JSON/图片并渐进读取 |
 | [formatting-latex](skills/formatting-latex) | Compile, lint, and reformat LaTeX sources |
 | [porting-anki-to-yanki](skills/porting-anki-to-yanki) | Convert Anki plain-text exports into yanki Markdown notes |
-| [progressive-learning](skills/progressive-learning) | 分层示例 + 同构练习 + 复测，逐层教会单个知识点 |
+| [progressive-learning](skills/progressive-learning) | 把一个 25 分钟的知识点写成 topic 文档（分层示例 + 同构练习），再按文档逐轮教会 |
 | [syncing-notes-to-anki](skills/syncing-notes-to-anki) | Author Markdown flashcards and sync them to Anki via yanki |
 | [topic-graph](skills/topic-graph) | Plan and track learning a subject as a prerequisite graph of small nodes |
 | [using-nowledge-mem](skills/using-nowledge-mem) | Use Nowledge Mem via remote MCP |

@@ -76,7 +76,7 @@ Only material unrelated to the subject (tool and editor choices, publisher pages
 
 ### Cut rules
 
-A row in `book-map.md` is a node. Size it by these rules, then by topic-graph's 20-minute tests at preflight.
+A row in `book-map.md` is a node. Size it by these rules, then by topic-graph's 25-minute tests at preflight.
 
 1. **A node is a set of claims that can be tested on their own and taught in one sitting.** Line counts are only a signal: about 170+ lines of prose (code excluded) → check whether to split; about 60 or fewer → check whether to merge. `bookmap.py stats` reports both.
 2. **Split** when a range holds several groups of claims that don't depend on each other and each could be tested alone. (Learning Go's "predeclared types" section held literals, integers, floats, complex numbers and strings — a dozen claims — and became two nodes.)
@@ -84,7 +84,7 @@ A row in `book-map.md` is a node. Size it by these rules, then by topic-graph's 
 4. **Merge** sections that are different faces of one mechanism. (Interfaces and nil, interface comparison and type assertions all follow from "an interface value is a (type, value) pair" and became one node.)
 5. **Depth sets capacity.** A read or aware node can hold more, because nothing in it is tested by writing.
 6. **Leaving the book's order is allowed when stated.** Put a phenomenon and its explanation together when the book separates them by chapters ("Go is call by value" in Ch5 and "why maps and slices behave differently" in Ch6 became one node after pointers). Write the reason in the evidence column.
-7. **At preflight, topic-graph's 20-minute tests have the last word.** If a row fails them, it becomes several nodes: the original ID keeps the first part, `graph.py add` creates the others, and the `book-map.md` row lists all of them with their sub-ranges.
+7. **At preflight, topic-graph's 25-minute tests have the last word.** If a row fails them, it becomes several nodes: the original ID keeps the first part, `graph.py add` creates the others, and the `book-map.md` row lists all of them with their sub-ranges.
 
 ### Prerequisites
 

@@ -1,0 +1,5 @@
+{"id": "D01", "stage": "document", "title": "写 T1 的 topic 文档", "turns": [{"role": "user", "ref": "t1_preflight.md"}], "context_ref": "demo_context.md", "learner_ref": "demo_learner.md"}
+{"id": "D02", "stage": "too_big", "title": "知识点超过 25 分钟（整个拥塞控制）", "turns": [{"role": "user", "ref": "big_preflight.md"}], "context_ref": "demo_context.md", "learner_ref": "demo_learner.md"}
+{"id": "D03", "stage": "reading_document", "title": "阅读型知识点的文档", "turns": [{"role": "user", "ref": "reading_preflight.md"}], "context_ref": "demo_context.md", "learner_ref": "demo_learner.md"}
+{"id": "D04", "stage": "document", "title": "写 T2 的 topic 文档（ACK 与重传）", "turns": [{"role": "user", "ref": "t2_preflight.md"}], "context_ref": "demo_context.md", "learner_ref": "demo_learner.md"}
+{"id": "D05", "stage": "document", "title": "全景类知识点也写两层以上（N0 四层全景）", "turns": [{"role": "user", "ref": "map_preflight.md"}], "context_ref": "demo_context.md", "learner_ref": "demo_learner.md"}

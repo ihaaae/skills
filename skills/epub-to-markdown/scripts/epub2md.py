@@ -17,6 +17,16 @@ local MEDIA = os.getenv("EPUB2MD_MEDIA") == "1"
 local NOISE = {source=1, sourcecode=1, screen=1, programlisting=1, highlight=1,
   code=1, pre=1, literal=1, listing=1, listingblock=1, hljs=1, prettyprint=1,
   numberlines=1, numbersource=1, linenums=1}
+-- layout classes that sit on a <pre> without naming a language
+-- (O'Reilly: "less_space pagebreak-before", "no-indent small")
+local LAYOUT = {"break", "space", "indent", "small", "large", "width", "margin",
+  "center", "left", "right", "float", "clear", "keep", "widow", "orphan", "wrap"}
+
+local function is_layout(k)
+  if k:find("_", 1, true) then return true end
+  for _, w in ipairs(LAYOUT) do if k:find(w, 1, true) then return true end end
+  return false
+end
 local ADMON = {admonition=1, note=1, tip=1, warning=1, caution=1, important=1, sidebar=1}
 -- boxes whose own heading is a caption, not a section of the book
 local CAPTIONED = {example=1, figure=1, table=1}
@@ -212,9 +222,16 @@ local function footnotes(doc)
     end,
   })
   local notes, gone, n = {}, {}, 0
+  -- a note's own backlink ("<sup><a href=#ref>1</a></sup> text") looks like a
+  -- reference too; once its block has become a note it refers to nothing
+  local function in_note(ids)
+    for id in pairs(ids) do
+      if holder[id] and gone[holder[id]] then return true end
+    end
+  end
   for _, r in ipairs(refs) do
     local h = holder[r.target]
-    if h and not notes[r.target] and not r.ids[r.target] then
+    if h and not notes[r.target] and not r.ids[r.target] and not in_note(r.ids) then
       local back = false
       for _, l in ipairs(h.links) do if r.ids[l] then back = true end end
       local lead
@@ -461,9 +478,13 @@ local clean = {
     if not lang then
       for _, c in ipairs(el.classes) do
         local k = c:lower()
-        if not NOISE[k] and not k:match("^lang") and k:match("^[%w+#.-]+$") then lang = c break end
+        if not NOISE[k] and not k:match("^lang") and not is_layout(k) and k:match("^[%w+#.-]+$") then
+          lang = c break
+        end
       end
     end
+    -- the newline right after <pre> is not part of the code (HTML drops it)
+    el.text = el.text:gsub("^[ \t]*\n", "")
     -- pandoc writes class-less blocks as indented code; "text" keeps them fenced
     el.attr = pandoc.Attr("", {lang or guess_lang(el.text)})
     return el
@@ -505,6 +526,11 @@ local clean = {
   Image = function(el)
     local file = el.attributes["epub2md-file"]
     el.attr = pandoc.Attr()
+    -- pandoc's copy of the metadata cover, when the book has a cover page too
+    if MEDIA and file == "" and imguses[el.src] >= 2 then
+      dropped = dropped + 1
+      return {}
+    end
     if MEDIA or stringify(el.caption) ~= "" then return el end
     -- an image-only page (a scanned code listing, a cover) repeats the text,
     -- pandoc puts the metadata cover before the first spine file, and a picture
@@ -525,6 +551,9 @@ local strip = {
   RawInline = function(el) if el.format == "html" then return {} end end,
   Para = function(el) if #el.content == 0 then return {} end end,
   Plain = function(el) if #el.content == 0 then return {} end end,
+  -- gfm drops the Div itself anyway; unwrapped, the chapter headings are at the
+  -- top level, where --reference-location=section looks for section ends
+  Div = function(el) return el.content end,
 }
 
 -- non-breaking spaces in prose (spaced-out section numbers, "Proof   We")
@@ -568,7 +597,8 @@ LOCATOR = re.compile(r"\[[^\]]*\]\(#[^)\s]*\)")
 # no longer closes), and never where the next line would open a new block.
 SENT_END = re.compile(r"[.!?][\"')\]”’]* +(?=[A-Z\"“‘(\[`$]|[^\x00-\x7f])|[。！？][”’」』）]* *(?=[^\s”’」』）*_])")
 ABBREV = re.compile(r"(?:^|[\s(])(?:Mr|Mrs|Ms|Dr|Prof|St|Jr|Sr|vs|etc|e\.g|i\.e|cf|Fig|No|Vol|Ch|Sec|Eq|al)\.$", re.I)
-UNSPLIT = re.compile(r"`+[^`]*`+|\$\$.*?\$\$|\$[^$]+\$|!?\[(?:[^\[\]]|\[[^\]]*\])*\]\([^)]*\)|\[\^[^\]]+\]")
+UNSPLIT = re.compile(r"`+[^`]*`+|\$\$.*?\$\$|\$[^$]+\$|!?\[(?:[^\[\]]|\[[^\]]*\])*\]\([^)]*\)|\[\^[^\]]+\]"
+                     r"|(?<![\\*])\*\*[^*\s](?:[^*]|\\\*)*?(?<![\\\s])\*\*(?!\*)")
 BLOCK_START = re.compile(r"(?:#{1,6}|[-*+]|\d{1,9}[.)])(?:\s|$)|[>|<]|`{3}|~{3}|[=-]+\s*$|\[[^\]]*\]:")
 # quote markers and indentation repeat on every line; a list marker or a
 # footnote label becomes the same width of spaces
@@ -744,6 +774,25 @@ def listing_tables(text, margins):
     return re.sub(r"<table\b.*?</table>", convert, text, flags=re.S)
 
 
+NOTE_REF = re.compile(r"<sup\b[^>]*>\s*\[?\s*<a\b[^>]*\bhref=[\"'][^\"'#]*#([^\"']+)[\"']"
+                      r"|<a\b[^>]*\bhref=[\"'][^\"'#]*#([^\"']+)[\"'][^>]*>\s*<sup\b")
+
+
+def footnote_anchors(texts):
+    """pandoc drops the id of a <p>, so a footnote kept as <p id="n1"> (O'Reilly
+    HTMLBook, calibre) can't be found by its reference. Move the id of every
+    paragraph that a superscript link points at onto an <a id> at its start;
+    edits `texts` in place."""
+    targets = {a or b for t in texts.values() for a, b in NOTE_REF.findall(t)}
+
+    def move(m):
+        if m.group(2) not in targets:
+            return m.group(0)
+        return f'<p{m.group(1)}{m.group(3)}><a id="{m.group(2)}"></a>'
+    for name, text in texts.items():
+        texts[name] = re.sub(r"<p\b([^>]*?)\s+id=[\"']([^\"']+)[\"']([^>]*)>", move, text)
+
+
 def patch_epub(src, tmp):
     """Rewrite the spine documents before pandoc sees them; return the path of
     a patched copy (or src if nothing changed) and a few counts."""
@@ -757,6 +806,7 @@ def patch_epub(src, tmp):
                 stats["headings_from_nav"] = promote_headings(z, texts)
             except Exception as e:  # navigation is nice-to-have
                 print(f"warning: could not use the ePub's navigation for headings: {e}", file=sys.stderr)
+            footnote_anchors(texts)
             margins = css_margins(z)
             for name, text in texts.items():
                 if "<table" in text:
@@ -928,7 +978,11 @@ def main():
 
     out_path = a.output or os.path.splitext(a.epub)[0] + ".md"
     meta = metadata(a.epub)
-    text, extra = run_pandoc(a.epub, a.media)
+    media = a.media and os.path.abspath(a.media)
+    text, extra = run_pandoc(a.epub, media)
+    if media:  # image links relative to the output file, so the pair can move together
+        rel = os.path.relpath(media, os.path.dirname(os.path.abspath(out_path)))
+        text = text.replace("](" + media + "/", "](" + rel + "/").replace("](<" + media + "/", "](<" + rel + "/")
     body, toc, stats = postprocess(text, a.toc_depth)
     stats.update(extra)
     lines = front_matter(meta, a.epub, toc, len(body)) + body

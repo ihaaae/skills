@@ -153,18 +153,33 @@ No Starch 的 DocBook 导出：有 `<h1>`–`<h3>`，toc 200 条；745 个 `<pre
 
 root 提示符：210 个块以 `# ` 开头，其中 208 个是 root 会话（`# cd /usr/src`、`# pfctl …`），2 个是配置文件注释（`# $OpenBSD: …`、`# Default …`）。规则：`# ` 后第一个词以小写字母、`.` 或 `/` 开头且不以 `:` 结尾就记为 `console`——208 个全中、0 误判；代价是脚本里以小写词开头的注释会误标。console 块 71 → 283（带缩进或标注编号的会话也算上了），逐个看过没有误判。
 
+## 7. Learning Go 复测（第七轮，2026-10-12）
+
+在 pandoc 3.1.3 和 3.8 上重跑 Learning Go 第 2 版，第五、六轮的改动在这本书上留下的问题：
+
+1. 排版 class 被当成代码语言：`<pre class="pagebreak-before">` 输出 ```` ```pagebreak-before ````、`no-indent` 同理（3.8 下 3 处）。兜底取第一个 class 当语言时，跳过含 `_` 或含 `break space indent small large width margin center left right float clear keep widow orphan wrap` 的 class。改后这 3 块按第五轮规则变成 `console` / `text`。
+2. 代码块首行空行：`<pre>` 后紧跟的换行按 HTML 规则不属于代码，pandoc 却保留了 → Lua 里去掉 `el.text` 开头的空白行。
+3. `<p id>` 脚注（上一轮的已知缺陷）：O'Reilly HTMLBook 的两个脚注是 `<p data-type="footnote" id="…">`，pandoc 丢掉 `<p>` 的 id，引用找不到目标。预处理 `footnote_anchors()`：凡是被上标链接（`<sup><a href=#x>` 或 `<a href=#x><sup>`）指向的 `<p id=x>`，把 id 挪到段首的 `<a id=x></a>`。第一版把注释自己的回链（`<sup><a href=#ref>1</a></sup>`）也当成引用，于是正文段落被当成注释移走 —— 引用所在块已经变成注释的，不再处理（`in_note`）。
+4. 脚注定义落在全书末尾：章节标题包在 `<section>` 生成的 Div 里，`--reference-location=section` 在顶层找不到章节结尾。gfm 本来就会丢掉 Div，所以在 strip 阶段直接展开 Div。OpenBSD 的 48 个脚注也因此从书末回到各节末尾（排序后与改前逐行相同，只有位置变化）。
+5. 按句断行拆开粗体图注：`**Figure 6-1. Storing two variables in memory**` 被断成两行，下一行开头的收尾 `**` 不再闭合（3.8 下 40 处 Figure / Example 标题）。`UNSPLIT` 加上粗体片段：`**` 后非空白开头、非空白结尾、不跨 `\*`。
+6. `--media`：图片链接是解压目录的绝对路径，换台机器或连同输出一起移动就断；pandoc 还把元数据封面再放一次（与 cover.html 重复）。改为相对输出文件所在目录的路径；`--media` 下文件名为空且同一 src 用了两次以上的封面副本丢弃。
+
+结果（Learning Go，pandoc 3.8）：脚注 2 个都是 `[^n]`，定义在所在章节末尾；827 个代码块无误标语言；Figure / Example 标题各占一行；`--media` 输出 21 张图、1 张封面，链接形如 `../img/assets/lgo2_0101.png`。正文中仍有用图片表示的 emoji（`sun.png` 等），无 alt，不处理。
+
+验证：Learning Go、Absolute OpenBSD 在 pandoc 3.1.3 / 3.8 上 `check.py` 都通过；OpenBSD 的 diff 只有脚注位置；golden 更新了这两本书的 4 行（openbsd 3.8 是新增）。Pro Git、TPOP、CLRS 这轮手头没有，第 4 条（展开 Div）可能改变它们的脚注位置，需要复跑、看 diff、再 `--update`。
+
 ## 已知缺陷 / 下一步
 
 ### 转换器的限制
 
 - 公式是图片的书（CLRS 的 `alt="art"`）只能保留图片引用；伪代码里的上下标（`c<sub>ij</sub>`）在代码块里变成 `cij`。
-- 脚注的目标是 `<p id="n1">` 时（calibre 常见）不转：pandoc 3.1.3 丢掉 `<p>` 的 id，目标找不到（这种链接以前就是死链）。`<a id>`、`<div id>` 和 `epub:type="noteref"` 形式可以转。
+- 用图片表示的 emoji / 符号（Learning Go 的 `sun.png`）没有 alt，只能保留图片或占位符。
 - 按句断行：中文句子之间的换行，用不带 `east_asian_line_breaks` 的渲染器看会多一个空格；以小写字母或数字开头的下一句不断；缩写表是手写的。
 - `# ` 开头的块按「后面是不是命令」判断 `console`，脚本里以小写词开头的注释（`# set up the jail`）会被误标。
 - 导航提升标题只处理 `<p>`；用 `<div>` 或 `<span>` 充当标题的书会漏掉。
 
 ### 待验证
 
-- 第五、六轮的改动只在 Pro Git 和 Absolute OpenBSD（pandoc 3.1.3）上跑过；TPOP、Learning Go、CLRS 和 pandoc 3.8 下的 golden 需要复跑、看 diff、再 `--update`。
+- 第五至七轮的改动在 Learning Go、Absolute OpenBSD（3.1.3 / 3.8）上复跑过；Pro Git、TPOP、CLRS 的 golden 需要复跑、看 diff、再 `--update`。
 - 代码段落识别只抽查过若干处，没有逐个核对 TPOP 的 453 个块。
 - 公式转换需要一本真实的 MathML 书来验证。

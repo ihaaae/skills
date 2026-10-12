@@ -1,11 +1,11 @@
 # progressive-learning eval
 
-对比 `skills/progressive-learning` 有没有让教学变好：同一个场景，让模型带 skill 和不带 skill 各写一遍"下一条回复"，再比较两份回复。skill 的流程是先把一个知识点写成 topic 文档，再按文档上课。eval 只测写文档的那一轮，回复就是整份文档；上课的进度由 skill 自带的 `scripts/lesson.py` 控制，有单元测试，这里不测。本目录只放开发用的 eval，不会被安装。
+对比 `skills/progressive-learning` 有没有让教学变好：同一个场景，让模型带 skill 和不带 skill 各写一遍"下一条回复"，再比较两份回复。skill 的流程是先把一个知识点写成 topic 文档，再按文档上课。eval 只测写文档。skill 要求先给出判断和分层计划、等用户确认再写，所以写文档的用例跑两轮：第一轮拿到计划，自动回复"可以，就按这个计划写吧"，第二轮的回复才是文档，裁判评文档，计划另存为 `outputs/*.plan.md`；第一轮就直接写出文档的（不带 skill 的 baseline 常这样），直接拿它当文档。知识点太大的 D02 只跑一轮，看它有没有拦下来。上课的进度由 skill 自带的 `scripts/lesson.py` 控制，有单元测试，这里不测。本目录只放开发用的 eval，不会被安装。
 
 ## 怎么比
 
 1. **两种条件**：两边拿到同样的上下文（工作区说明、专题规则、topic-graph skill、对话历史），唯一的区别是 skill 那边多了 progressive-learning 的 SKILL.md。测的是这个 skill 在其余条件都在的情况下，多带来了什么。
-2. **格式检查**（脚本判定）：输出有没有按 skill 规定的模块和节奏写。写文档的用例直接调用 skill 自带的 `scripts/check_topic.py`：模块顺序、每层一个例子配两道题、共 2～4 层、题号连续、答案只在文末、知识里有图或表。这一层只能说明 skill 有没有被照着做，不能说明教得好。baseline 没看过这些规定，格式分低是预料之中的。
+2. **格式检查**（脚本判定）：输出有没有按 skill 规定的模块和节奏写。第一轮有没有只给计划、不写文档；文档直接调用 skill 自带的 `scripts/check_topic.py`：模块顺序、每层一个例子配两道题、共 2～4 层、题号连续、答案只在文末、知识里有图或表。这一层只能说明 skill 有没有被照着做，不能说明教得好。baseline 没看过这些规定，格式分低是预料之中的。
 3. **盲评**（模型判定）：裁判不看 skill，按 `eval/judge.md` 里站在学习者角度的 8 项标准，逐项比较两份回复：读得懂、只用学过的、准确、意义与全景、节奏（层与层是否逐步推进）、题目（能否照例子的思路解出、干扰项和解析是否对应具体的错误推理）、完成这一轮的任务、避开学习者以前指出的问题。每对回复按正反两种顺序各判一次，两次一致才算胜负，否则记平局。
 
 写作模型默认 `opus`，裁判默认 `sonnet`，两者不同，避免模型给自己打分。
@@ -40,7 +40,7 @@ python3 eval/run.py --learn-dir ~/Learn --dry-run   # 只把组装好的提示�
 - 默认用 `claude -p`：走 Claude Code 订阅，不另外计费，只占用量额度。用 `--safe-mode` 运行，本机装的 skill、CLAUDE.md、hook 不会混进 baseline。`claude -p` 只接受一条用户消息，所以多轮历史被拼成一段文字放进提示里，和真实对话略有差别。
 - `--backend api` 改用 Claude API，按真实的多轮消息发送，按 token 计费：`uv run --with anthropic eval/run.py --backend api`。没有开 fallback，一旦换了模型作答就记为出错。
 
-跑一轮全部 8 个用例，大约是 16 次写作加 16 次裁判。`summary.md` 末尾会给出按 API 标价折算的费用。
+跑一轮全部 8 个用例，最多 30 次写作（7 个两轮的用例 × 两边 × 2，加 D02 两边各 1）和 16 次裁判。`summary.md` 末尾会给出按 API 标价折算的费用。
 
 ## 怎么读结果
 

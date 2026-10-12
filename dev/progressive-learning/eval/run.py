@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """progressive-learning 的对比 eval：同一个场景，带 skill 和不带 skill 各写一遍下一轮回复，再比较。
 
-用例都是写 topic 文档的那一轮：回复就是整份文档（或者说明为什么不写）。
+用例都是写 topic 文档：skill 要求先给出判断和分层计划、等用户确认再写，所以写文档的用例跑两轮——
+第一轮拿到计划，自动回复一句"可以，就按这个计划写吧"，第二轮的回复才是文档，裁判评的是文档。
+第一轮就直接写出了文档的，不再追问，直接拿它当文档。知识点太大的用例只跑一轮，看它有没有拦下来。
 上课由 skill 自带的 lesson.py 控制进度，这里不测。
 
   python3 eval/run.py                              # 跑 cases/ 下所有用例（Learn 用例需要 --learn-dir）
@@ -58,12 +60,14 @@ STAGES = {
                   "核心原理及其动机，配图或表；之后是逐层加深的例子和题目，每道题都能只靠前面讲过的内容"
                   "和学习者已有的知识解出来；答案和解析放在文末，学习者从头读时不会先看到答案。",
         "checks": ["topic_doc"],
+        "two_turn": True,
     },
     "reading_document": {
         "expect": "这个知识点要求学习者去读一段指定的材料，学习者要求先写成 topic 文档：说明这节课的定位，"
                   "布置具体的阅读任务（读哪篇哪几节、预计用时）和两三个带着读的引导问题，"
                   "收拢材料要建立的主张，再逐层用例子和题目考这些主张及其应用；不要把材料内容自己讲一遍代替阅读。",
         "checks": ["topic_doc:reading"],
+        "two_turn": True,
     },
     "too_big": {
         "expect": "学习者要求把一个知识点写成 topic 文档，但这个知识点明显不是 25 分钟能学完的："
@@ -72,9 +76,11 @@ STAGES = {
     },
 }
 
-# 每个用例都在最后一条用户消息后面加上这段请求。
+# 每个用例都在最后一条用户消息后面加上这段请求。两轮的用例，第一轮之后用 APPROVE 回复。
 DOC_REQUEST = ("请先把这节课写成一份完整的 topic 文档（含全部题目，答案集中放在文末），写好后我们再按文档上课。"
                "本环境不能写文件，直接把文档作为回复输出。")
+APPROVE = "可以，就按这个计划写吧。"
+PLAN_CHECKS = ["no_h3:例子一", "no_h3:问题一"]   # 第一轮只给计划，不写文档
 
 BASELINE_SYSTEM = """你是一个耐心的学习助手，帮助用户学习。下面附上用户的工作区说明和本专题的规则，以及管理学习进度用的 topic-graph skill。\
 本环境里你不能调用工具：需要的命令输出会直接写在用户消息里，要写进文件的内容直接写在回复里。只写出你的下一条回复。"""
@@ -107,6 +113,7 @@ def load_cases(paths: list[Path], learn_dir: Path | None) -> list[dict]:
             stage = STAGES[case["stage"]]
             case.setdefault("expect", stage["expect"])
             case.setdefault("checks", stage["checks"])
+            case.setdefault("two_turn", stage.get("two_turn", False))
             case.setdefault("watch", [])
             case.setdefault("learner", "")
             case.setdefault("context", "")
@@ -387,6 +394,28 @@ def judge(backend, model: str, case: dict, outputs: dict, rng: random.Random) ->
     return {"merged": merged, "rounds": rounds}
 
 
+def write(backend, args, case: dict, cond: str) -> tuple[str, str | None, dict]:
+    """写出被评的回复。两轮的用例先拿计划，再回复 APPROVE 拿文档。返回 (文档, 计划, 写作信息)。"""
+    system = system_prompt(case, cond)
+    r = backend.call(args.model, system, case["turns"])
+    info = {"served": r["served"], "cost_usd": r["cost_usd"], "seconds": r["seconds"]}
+    if not case["two_turn"] or not run_check("no_h3:例子一", r["text"]):
+        return r["text"], None, info
+    turns = case["turns"] + [{"role": "assistant", "content": r["text"]}, {"role": "user", "content": APPROVE}]
+    r2 = backend.call(args.model, system, turns)
+    info = {"served": sorted(set(info["served"] + r2["served"])),
+            "cost_usd": (info["cost_usd"] or 0) + (r2["cost_usd"] or 0) if info["cost_usd"] is not None else None,
+            "seconds": round(info["seconds"] + r2["seconds"], 1)}
+    return r2["text"], r["text"], info
+
+
+def checks_for(case: dict, doc: str, plan: str | None) -> dict:
+    checks = {c: run_check(c, doc) for c in case["checks"]}
+    if case["two_turn"]:   # 第一轮就写了文档时 plan 是 None，"先给计划"算没做到
+        checks.update({f"plan:{c}": plan is not None and run_check(c, plan) for c in PLAN_CHECKS})
+    return checks
+
+
 def run_one(backend, args, case: dict, rep: int, out_dir: Path) -> dict:
     row = {"id": case["id"], "stage": case["stage"], "rep": rep, "case_hash": case["_hash"],
            "writer_model": args.model, "judge_model": args.judge_model, "backend": args.backend}
@@ -395,17 +424,19 @@ def run_one(backend, args, case: dict, rep: int, out_dir: Path) -> dict:
     if prev:  # 只重新评审：沿用上次写好的回复和写作信息
         row["writer_model"], row["backend"] = prev["writer_model"], prev["backend"]
     for cond in CONDITIONS:
+        name = f"{case['id']}__{cond}__r{rep}"
         if prev:
-            text = (args.rejudge / "outputs" / f"{case['id']}__{cond}__r{rep}.md").read_text()
-            outputs[cond] = text
-            row[cond] = {**prev[cond], "checks": {c: run_check(c, text) for c in case["checks"]}}
-            (out_dir / "outputs" / f"{case['id']}__{cond}__r{rep}.md").write_text(text)
-            continue
-        r = backend.call(args.model, system_prompt(case, cond), case["turns"])
-        outputs[cond] = r["text"]
-        row[cond] = {"served": r["served"], "cost_usd": r["cost_usd"], "seconds": r["seconds"],
-                     "chars": len(r["text"]), "checks": {c: run_check(c, r["text"]) for c in case["checks"]}}
-        (out_dir / "outputs" / f"{case['id']}__{cond}__r{rep}.md").write_text(r["text"])
+            doc = (args.rejudge / "outputs" / f"{name}.md").read_text()
+            plan_file = args.rejudge / "outputs" / f"{name}.plan.md"
+            plan = plan_file.read_text() if plan_file.exists() else None
+            info = prev[cond]
+        else:
+            doc, plan, info = write(backend, args, case, cond)
+        outputs[cond] = doc
+        row[cond] = {**info, "chars": len(doc), "checks": checks_for(case, doc, plan)}
+        (out_dir / "outputs" / f"{name}.md").write_text(doc)
+        if plan is not None:
+            (out_dir / "outputs" / f"{name}.plan.md").write_text(plan)
     rng = random.Random(f"{case['id']}:{rep}")
     row["judge"] = judge(backend, args.judge_model, case, outputs, rng)
     return row

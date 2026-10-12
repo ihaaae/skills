@@ -342,7 +342,7 @@ A ✅ records that the learner showed understanding *on that day*. Weeks later, 
 - Right → `set ID mastered` again, which refreshes `verified`.
 - Wrong → `set ID taught`. Re-teach briefly (usually one example and two questions), then set it again. The demotion warning lists the ✅ descendants to re-check.
 - Never review more than one node per lesson unless the learner asks. Review is upkeep, not the lesson.
-- Review and misconception retests serve the current goals. When the content in question lies outside them (a deferred phase, a non-goal), wait until that scope returns, even if the node is an ancestor of something on the path; a needed correction can be stated in one line without a question. (A learner was once quizzed on a correction about a deferred topic and rightly objected.)
+- Review and misconception retests serve the current goals. When the content in question lies outside them (a deferred phase, a non-goal), wait until that scope returns, even if the node is an ancestor of something on the path; a needed correction can be stated in one line without a question.
 
 ## Writing node summaries
 

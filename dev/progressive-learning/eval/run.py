@@ -280,7 +280,7 @@ SKILL_FILES = {"skill": SKILL, "baseline": None}   # --skill / --against 会改�
 
 
 SKILL_REFERENCES = ["modules.md", "questions.md"]   # SKILL.md 让 agent 写文档前读完的参考文档
-TOPIC_GRAPH_REFERENCES = ["files.md", "nodes.md", "building.md", "diagnosis.md", "upkeep.md"]
+TOPIC_GRAPH_REFERENCES = ["teaching.md", "files.md", "nodes.md", "building.md", "diagnosis.md", "upkeep.md"]
 
 
 def skill_text(skill_file: Path, references: list[str] = SKILL_REFERENCES) -> str:

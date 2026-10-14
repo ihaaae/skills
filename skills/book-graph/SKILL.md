@@ -137,12 +137,12 @@ Each verdict the learner confirms becomes a calibration example in `book-map.md`
 
 - One group per chapter. A chapter that is all non-goal gets no group. A chapter merged into another goes into that group.
 - `graph.py add` every row, with `--prereq` from the map. Put `source` and `depth` into the front matter. Bodies stay empty until preflight.
-- Map and synthesis nodes (topic-graph "Big picture and meaning"): the book usually supplies them. A chapter introduction is a natural map node, and the "Wrapping Up" and design-advice sections ("Accept interfaces, return structs") are natural synthesis material. Add a map node where a chapter lacks an overview.
+- Map and synthesis nodes (topic-graph "Big picture and meaning", in teaching.md): the book usually supplies them. A chapter introduction is a natural map node, and the "Wrapping Up" and design-advice sections ("Accept interfaces, return structs") are natural synthesis material. Add a map node where a chapter lacks an overview.
 - Goals and `[track] main` in `topic.yaml` as usual. Then `graph.py sync`.
 
 ### 6. Teaching from the book
 
-A lesson in a book-based topic is an ordinary topic-graph lesson: the node's `source` and `depth` fields work as topic-graph "Source and depth" describes, and the learner doesn't read the book unless a reading node assigns sections (topic-graph core rule 10). This skill comes back into play only when the plan changes:
+A lesson in a book-based topic is an ordinary topic-graph lesson: the node's `source` and `depth` fields work as topic-graph "Source and depth" describes, and the learner doesn't read the book unless a reading node assigns sections (topic-graph core rule 10, in teaching.md). This skill comes back into play only when the plan changes:
 
 - When a node is split or its range changes, update its `book-map.md` row in the same edit, then re-run `check`.
 - When the learner, having learned a part, wants its depth raised or lowered, change the node's `depth`, its `book-map.md` row, and record why in `goals.md`.

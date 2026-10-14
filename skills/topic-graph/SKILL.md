@@ -54,6 +54,8 @@ caveat: ""                # optional: scope in which a ✅ still holds
 updated: 2026-09-29
 verified: 2026-09-29      # written by `set … mastered`; drives review (section J)
 mode: ""                  # optional: "reading" for a reading node (see Nodes)
+source: ""                # optional: where the node's material is, e.g. "book.md:1312-1381" (see Nodes)
+depth: ""                 # optional: write | read | aware (see Nodes)
 ---
 Body: the summary of what was actually taught (see "Writing node summaries").
 ```
@@ -145,6 +147,21 @@ Each main-track group should have a map node near its entry and at least one syn
 ### Reading nodes
 
 Usually the tutor teaches and the learner never reads the source. But a well-written outside text — a good tutorial, a book chapter — can give a top-down view faster than lessons can, and a learner who chooses to read it should get credit for doing so. A **reading node** (`mode: "reading"`) assigns a short reading instead of teaching; progressive-learning gives the lesson flow. The node body lists the exact sections assigned and the claims they are meant to establish. Reading suits map nodes and motivation/history best. A mechanism that needs worked examples is still taught.
+
+### Source and depth (optional fields)
+
+`graph.py` ignores both; they shape the lesson.
+
+- **`source`** points at the text the node is built from (line ranges in a file under `references/`, a section of a standard). At preflight, read it first and borrow its structure, motivation and examples (see Reference texts). Exercises found there are question material, still under core rule 3. Facts that may have aged are checked against the current authoritative source.
+- **`depth`** says what the learner should be able to do with the node, and so how it is taught and tested:
+
+| Depth | Learner can… | Lesson and questions |
+|---|---|---|
+| write | produce it correctly | the full progressive-learning run; questions require producing or fixing |
+| read | recognize it in someone else's work, say what it does and where it bites | predict-the-behavior questions on short snippets |
+| aware | know it exists and when to look it up | several aware items can share one lesson, one "you meet situation X — what do you reach for?" question each |
+
+A node can hold a lower-depth sub-item ("write; complex=aware"). Both fields are set when the graph is built (book-graph sets them for every node of a book-based topic); a session only reads them.
 
 ### The 25-minute rule
 
@@ -270,7 +287,7 @@ Diagnosis answers "which nodes can be marked ✅ without teaching?" It runs when
 ### D. Teaching a node
 
 1. **Choose** with `graph.py next`. The ranking encodes the priorities: retests, then main-track bottlenecks on the goal path, then side nodes for a change of pace.
-2. **Pre-flight**: `graph.py preflight ID`. It refuses locked nodes. Its output is the *allowed vocabulary* for the explanation, every example, and every expected answer path. If a planned example needs anything outside it, either teach that node first or cut the example down. Before teaching, fill the node's body with a draft (the claims to teach, the motivation, the planned picture or table, the source anchors) and check every claim against the source. If `references/` has a text covering the node, read it first and borrow its framing (see Reference texts). Untaught nodes often have only a title. Titles are written while the graph is built, from a quicker read, and can over-claim. If the source says otherwise, correct the title first — the learner is about to be tested on it.
+2. **Pre-flight**: `graph.py preflight ID`. It refuses locked nodes. Its output is the *allowed vocabulary* for the explanation, every example, and every expected answer path. If a planned example needs anything outside it, either teach that node first or cut the example down. Before teaching, fill the node's body with a draft (the claims to teach, the motivation, the planned picture or table, the source anchors) and check every claim against the source. If `references/` has a text covering the node, read it first and borrow its framing (see Reference texts). Untaught nodes often have only a title. Titles are written while the graph is built, from a quicker read, and can over-claim. If the source says otherwise, correct the title first — the learner is about to be tested on it. A node with `source` or `depth` is prepared as "Source and depth" says.
 3. **Teach with progressive-learning.** The node is the unit — one full run. Teach consistently with the prereq summaries `preflight` printed.
 4. **Mid-lesson gaps.** If the learner's question or a needed step reaches outside ✅ territory, stop and say what node it belongs to. If none exists, `graph.py add` it. Then either switch to it (and return) or mark the boundary explicitly and continue, recording a debt.
 5. **Record.** Write the node's summary into its file (below), then `graph.py set`. Every layer's two questions correct → `mastered`. Session ended mid-node, or content delivered without retest → `taught`, with a note in the body of where it stopped. A wrong second retest means not mastered, regardless of the first answer.

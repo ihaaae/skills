@@ -1,6 +1,6 @@
 ---
 name: book-graph
-description: "Build a topic-graph learning topic from one reference book: convert it to Markdown, map every section of the book to a node or an explicit non-goal (coverage), give each node a depth (write / read / aware) with stated evidence, cut sections into teachable nodes by explicit split/merge rules, derive prerequisites from the book's own cross-references, and calibrate the cut by sampling with the learner. A bundled script checks coverage and reports section sizes and cross-references. Extends topic-graph (which still owns node files, status and the session loop) and pairs with progressive-learning and epub-to-markdown. Use this when a learning topic is to be built around a book — \"learn X from this book\", a topic directory whose references/ holds a whole book, or when a book-map.md exists (按一本书建知识图谱、书的章节映射、覆盖检查)."
+description: "Build a topic-graph learning topic from one reference book: convert it to Markdown, map every section of the book to a node or an explicit non-goal (coverage), give each node a depth (write / read / aware) with stated evidence, cut sections into teachable nodes by explicit split/merge rules, derive prerequisites from the book's own cross-references, and calibrate the cut by sampling with the learner. A bundled script checks coverage and reports section sizes and cross-references. Extends topic-graph (which still owns node files, status and the session loop) and pairs with progressive-learning and epub-to-markdown. Use this when a learning topic is to be built around a book (\"learn X from this book\"), or when an existing book-based topic is restructured: re-mapping sections, splitting or merging nodes, changing depths, re-checking coverage (按一本书建知识图谱、书的章节映射、覆盖检查). Not needed for an ordinary lesson in a book-based topic: topic-graph covers the node fields `source` and `depth` that lessons use."
 ---
 
 # Book Graph
@@ -142,8 +142,7 @@ Each verdict the learner confirms becomes a calibration example in `book-map.md`
 
 ### 6. Teaching from the book
 
-- **Preflight reads the node's `source` ranges first** and borrows their structure, motivation and examples (topic-graph "Reference texts"). Check facts that may have aged against the official source (language spec, current docs), and note the book's version in `sources.md`.
-- **Depth shapes the lesson.** write → the full progressive-learning run, questions that require producing or fixing. read → predict-the-behavior questions on short snippets. aware → several aware items can share one lesson, one question each.
-- **The book's exercises** are question material for write nodes. Every fact an exercise needs must have been taught or be given in the stem.
-- **The learner doesn't read the book** unless a reading node assigns sections (topic-graph core rule 10). The book being available doesn't change that.
+A lesson in a book-based topic is an ordinary topic-graph lesson: the node's `source` and `depth` fields work as topic-graph "Source and depth" describes, and the learner doesn't read the book unless a reading node assigns sections (topic-graph core rule 10). This skill comes back into play only when the plan changes:
+
 - When a node is split or its range changes, update its `book-map.md` row in the same edit, then re-run `check`.
+- When the learner, having learned a part, wants its depth raised or lowered, change the node's `depth`, its `book-map.md` row, and record why in `goals.md`.

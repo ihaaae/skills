@@ -95,7 +95,7 @@ Update the files with targeted edits (never regenerate a file from memory — fi
 
 The body of a node is the canonical record of what was taught; the next session teaches consistently with it.
 
-- **State the claim as taught**: exact terms, attribution boundaries, and known simplifications (⚠️, naming the node that corrects them). Add the motivation in a line and the picture or table used, so the next session can reuse it.
+- **Only what was actually taught**, stated as taught: exact terms, attribution boundaries, and known simplifications (⚠️, naming the node that corrects them). It is the learner's model, not an encyclopedia entry; a correct statement the lesson didn't make goes in debts.md, not the body. Add the motivation in a line and the picture or table used, so the next session can reuse it.
 - **Current state, not history.** No "session 3: we covered…" logs (`log.jsonl` keeps the machine record). A correction leaves the corrected statement, the scope of the old one, and — if the learner held the old belief — a pitfall line plus a `debts.md` retest item.
 - **Learner's language**, with standard terms (usually English for technical fields) alongside.
 - **Keep it lean.** Long-settled ✅ summaries compress to a line or two; paid debts are deleted. Group-level material goes in `_group.md`.

@@ -28,7 +28,7 @@ Build progress:
 
    When the material's own design is unstable and the vendor's is opaque, the field's mainstream practice (widely used open-source frameworks, standards) is usually the best anchor for "architecture" topics.
 
-   Write each goal's `question` in `topic.yaml` (see "Big picture and meaning" in SKILL.md): one concrete question the learner wants to be able to answer.
+   Write each goal's `question` in `topic.yaml` (see "Big picture and meaning" in teaching.md): one concrete question the learner wants to be able to answer.
 2. **Chain backward.** From the goal, ask "what must be understood before this?" repeatedly until you reach things a general adult already knows or that you'll diagnose. Apply the 25-minute tests as you go. Then check the shape: each main group needs a map node near its entry and at least one synthesis node near its end.
 3. **Create the directory**: `topic.yaml` (title, `[track] main`, one `[[goal]]` per goal with `targets` — the end-point nodes whose ancestors form the goal path), `rules.md`, and nodes via `graph.py add` (first `add` in a new group needs `--group-title`). Run `graph.py check` after adding; fix and re-run until clean.
 4. **Don't build the whole domain.** Build solidly two or three layers ahead of the frontier and leave distant regions as a few coarse 🔒 stubs. The graph grows as learning reveals what's needed.

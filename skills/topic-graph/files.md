@@ -1,6 +1,6 @@
 # Topic files
 
-Read this when creating a topic directory, editing a topic file by hand, or deciding where a new rule or preference belongs.
+Read this when creating a topic directory, editing a topic file by hand, explaining exactly how `graph.py` ranks or validates, or deciding where a new rule or preference belongs.
 
 ## Topic directory layout
 
@@ -43,6 +43,22 @@ rhythm:                     # optional; defaults shown
   retro_gap_days: 7         # suggest a retro after this long without a status change
   retro_every_changes: 12   # …or after this many status changes since the last retro
 ```
+
+## What the script computes
+
+**`check`** reports unknown or retired prereqs, cycles, duplicate IDs, a ✅ whose prereqs aren't all ✅, ✅/📝 nodes with no summary, and unrecorded forward references. **`preflight ID`** prints the route from the node to each goal it serves (plus the goal's `question`), the permitted concepts, caveated ✅ nodes, the direct prereqs' summaries, and the node's existing body. **`set`** warns when demoting a node that ✅ descendants rely on; **`add`** rolls back if the new node breaks the graph. **`sync`** writes `STATE.md`: overview, progress toward goals, next step, all nodes.
+
+**How `next` ranks.** Lexicographic, so it is explainable:
+
+1. **📝 nodes whose prereqs are all ✅** (retest due) first — retests are cheap while content is fresh and each one unlocks a subtree.
+2. **Main-track groups** (`track.main`) before side groups.
+3. **On a goal path** (an ancestor of a goal target, or the target itself) before off-path.
+4. **Bottleneck**: more transitive dependents first.
+5. Track order, then ID.
+
+It also names one side-group node as a "change of pace", a retro to hold first (upkeep.md, I), and the ✅ node most due for review (upkeep.md, J).
+
+In the `Learn/` workspace, `mise run graph <command>` runs the script from the current directory; `mise run test` runs its tests.
 
 ## Where things live
 

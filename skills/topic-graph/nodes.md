@@ -55,7 +55,7 @@ Usually the tutor teaches and the learner never reads the source. But a well-wri
 
 Both fields are optional; `graph.py` ignores them and they shape the lesson.
 
-- **`source`** points at the text the node is built from (line ranges in a file under `references/`, a section of a standard). At preflight, read it first and borrow its structure, motivation and examples (see "Reference texts"). Exercises found there are question material, still under core rule 3. Facts that may have aged are checked against the current authoritative source.
+- **`source`** points at the text the node is built from (line ranges in a file under `references/`, a section of a standard). At preflight, read it first and borrow its structure, motivation and examples (see "Reference texts"). Exercises found there are question material, still under core rule 3 (teaching.md). Facts that may have aged are checked against the current authoritative source.
 - **`depth`** says what the learner should be able to do with the node, and so how it is taught and tested:
 
 | Depth | Learner can… | Lesson and questions |

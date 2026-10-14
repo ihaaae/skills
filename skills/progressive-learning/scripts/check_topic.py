@@ -93,7 +93,7 @@ def check(text: str, reading: bool = False) -> list[str]:
                       f"现在是 {titles[i:] or '（什么也没有）'}。")
     if layers > MAX_LAYERS:
         errors.append(f"有 {layers} 层，超过 {MAX_LAYERS} 层：这个知识点太大，25 分钟学不完。"
-                      "不要压缩层数凑数，回到第一步，告诉用户它太大在哪里、可以怎样拆。")
+                      "不要压缩层数凑数，回到第一步，告诉学习者它太大在哪里、可以怎样拆。")
     elif layers < MIN_LAYERS:
         errors.append(f"只有 {layers} 层，每个知识点至少 {MIN_LAYERS} 层（每层一个例子、两道题）。")
 

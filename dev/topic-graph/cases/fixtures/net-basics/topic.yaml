@@ -1,0 +1,8 @@
+title: "网页打开慢时网络里发生了什么"
+track:
+  main: ["N", "T"]
+goal:
+  - id: G1
+    title: "网页打开慢的时候，网络里在发生什么"
+    targets: ["T5"]
+    question: "一次 HTTPS 请求在真正传数据之前要等几个来回？丢包时为什么会突然卡住一下？"

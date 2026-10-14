@@ -1,0 +1,5 @@
+{"ts": "{{D-30}}T20:00:00", "id": "N0", "from": "new", "to": "mastered"}
+{"ts": "{{D-6}}T20:00:00", "id": "N1", "from": "new", "to": "mastered"}
+{"ts": "{{D-6}}T20:30:00", "id": "N2", "from": "new", "to": "mastered"}
+{"ts": "{{D-3}}T20:00:00", "id": "T1", "from": "new", "to": "mastered"}
+{"ts": "{{D-1}}T20:00:00", "id": "T2", "from": "new", "to": "taught"}

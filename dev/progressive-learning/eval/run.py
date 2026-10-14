@@ -280,12 +280,13 @@ SKILL_FILES = {"skill": SKILL, "baseline": None}   # --skill / --against 会改�
 
 
 SKILL_REFERENCES = ["modules.md", "questions.md"]   # SKILL.md 让 agent 写文档前读完的参考文档
+TOPIC_GRAPH_REFERENCES = ["files.md", "nodes.md", "building.md", "diagnosis.md", "upkeep.md"]
 
 
-def skill_text(skill_file: Path) -> str:
+def skill_text(skill_file: Path, references: list[str] = SKILL_REFERENCES) -> str:
     """SKILL.md 加上同目录的参考文档。"""
     parts = [skill_file.read_text()]
-    for name in SKILL_REFERENCES:
+    for name in references:
         ref = skill_file.parent / name
         if ref.exists():
             parts.append(f"# {name}\n\n{ref.read_text()}")
@@ -297,7 +298,7 @@ def system_prompt(case: dict, condition: str) -> str:
     parts = [SKILL_SYSTEM if skill_file else BASELINE_SYSTEM]
     if case["context"]:
         parts.append(case["context"])
-    parts.append("# topic-graph skill\n\n" + TOPIC_GRAPH_SKILL.read_text())
+    parts.append("# topic-graph skill\n\n" + skill_text(TOPIC_GRAPH_SKILL, TOPIC_GRAPH_REFERENCES))
     if skill_file:
         parts.append("# progressive-learning skill\n\n" + skill_text(skill_file))
     return "\n\n---\n\n".join(parts)

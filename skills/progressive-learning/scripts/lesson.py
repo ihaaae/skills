@@ -10,12 +10,16 @@ agent 负责内容：写问题解答、补充例子、补充问题，回答学�
 
 用法（每条命令都先给文档路径；进度存在文档旁边的 <文档>.progress.json）：
   lesson.py <文档> start                开始上课，打印第一轮
-  lesson.py <文档> continue             学习者读完了这一轮的新内容
+  lesson.py <文档> continue             学习者读完了这一轮的新内容（通常不用：见下）
   lesson.py <文档> answer C             学习者答了选择题（开放题用 --correct yes|no）
   lesson.py <文档> supplement --key B   登记 agent 写的补充问题及其正确选项（开放题用 --open）
   lesson.py <文档> status               查看当前进度（例如 context 被压缩之后）
 
 学习者提问、没有作答时，直接回答，不运行脚本，进度不变。
+
+学习者说"继续"之后要发什么是确定的，所以每次输出在"停，等学习者读完"之后，
+会把接下来几轮"继续"要发的内容一并给出，进度也已经记到那里：这几轮不用运行脚本，
+省掉一次调用。不确定发到哪了，运行 continue，它按顺序吐出还没发的那一轮。
 """
 from __future__ import annotations
 
@@ -155,10 +159,39 @@ def cmd_start(d: dict) -> tuple[dict, str]:
         st["stage"] = "reading_task"
         return st, turn(verbatim(d, "定位"), verbatim(d, "阅读任务"), then="停，等学习者读完材料。")
     st["stage"] = "knowledge"
-    return st, turn(verbatim(d, "定位"), verbatim(d, "知识"), then=STOP_READ)
+    return st, with_lookahead(d, st, turn(verbatim(d, "定位"), verbatim(d, "知识"), then=STOP_READ))
+
+
+READ_STAGES = ("reading_task", "knowledge", "example", "extension")
+
+
+def with_lookahead(d: dict, st: dict, out: str) -> str:
+    """当前在等学习者读完时，把之后每一轮"继续"要发的内容预先算好，进度记到等回答（或课上完）为止。"""
+    pending = []
+    while st["stage"] in READ_STAGES:
+        pending.append(step_continue(d, st))
+    st["pending"] = pending
+    if not pending:
+        return out
+    parts = [out, f"—— 预先给出的 {len(pending)} 轮：学习者每说一次\"继续\"（或表示读完），"
+                  "不用运行脚本，按顺序直接发下一轮；学习者提问就先回答，下次说继续再发。进度已经记好。——"]
+    parts += [f"【学习者第 {i} 次说继续后】\n\n{p}" for i, p in enumerate(pending, 1)]
+    return "\n\n".join(parts)
 
 
 def cmd_continue(d: dict, st: dict) -> str:
+    pending = st.get("pending") or []
+    if pending:
+        out = pending.pop(0)
+        if pending:
+            out += f"\n\n（之后还有 {len(pending)} 轮预先给出的内容，学习者说继续时依次发；忘了就再运行 continue。）"
+        return out
+    if st["stage"] in READ_STAGES:
+        return with_lookahead(d, st, step_continue(d, st))
+    return step_continue(d, st)
+
+
+def step_continue(d: dict, st: dict) -> str:
     stage = st["stage"]
     if stage == "reading_task":
         st["stage"] = "knowledge"
@@ -206,7 +239,7 @@ def cmd_answer(d: dict, st: dict, letter: str | None, correct: str | None) -> st
     layer = d["layers"][st["layer"]]
     if st["recent"][-2:] == [True, True]:
         item, then = advance(d, st)
-        return source + "\n\n" + turn(feedback, item, then=then)
+        return with_lookahead(d, st, source + "\n\n" + turn(feedback, item, then=then))
     if st["next_q"] < len(layer["questions"]):
         return source + "\n\n" + turn(feedback, ask_question(d, st), then=STOP_ANSWER)
     if not right:
@@ -215,7 +248,7 @@ def cmd_answer(d: dict, st: dict, letter: str | None, correct: str | None) -> st
         n = cn(st["supplement_examples"])
         item = (f"你来写 `### 补充例子{n}：<标题>`：比{layer['example'].split('：')[0]}更简单或更接近它，"
                 "针对这道题暴露出的误区重讲，同样写成题目 + 解答，末尾给判断方法。这一轮不出题。")
-        return source + "\n\n" + turn(feedback, item, then=STOP_READ)
+        return with_lookahead(d, st, source + "\n\n" + turn(feedback, item, then=STOP_READ))
     item = ask_question(d, st)
     return source + "\n\n" + turn(feedback, item, then="登记后发出这道题，" + STOP_ANSWER)
 
@@ -246,6 +279,9 @@ def cmd_status(d: dict, st: dict) -> str:
     lines = [f"第 {st['layer'] + 1} 层（共 {len(d['layers'])} 层）" if st["layer"] < len(d["layers"])
              else "所有层都已掌握",
              f"当前在等：{WAITING[st['stage']]}"]
+    if st.get("pending"):
+        lines.append(f"还有 {len(st['pending'])} 轮预先给出、可能还没发的内容；对照对话看发到哪了，"
+                     "或运行 continue 按顺序取出")
     if st["stage"] == "question":
         lines.append(f"等回答的题：{st['current']['label']}")
     if st["recent"]:

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """progressive-learning 的对比 eval：同一个场景，带 skill 和不带 skill 各写一遍下一轮回复，再比较。
 
-用例都是写 topic 文档：skill 要求先给出判断和分层计划、等用户确认再写，所以写文档的用例跑两轮——
-第一轮拿到计划，自动回复一句"可以，就按这个计划写吧"，第二轮的回复才是文档，裁判评的是文档。
-第一轮就直接写出了文档的，不再追问，直接拿它当文档。知识点太大的用例只跑一轮，看它有没有拦下来。
+用例都是写 topic 文档：skill 要求先写分层计划、自查通过后直接写文档，不等用户确认，所以第一轮就应该拿到文档。
+第一轮只给了计划、停下来等确认的（旧版 skill 或不带 skill 的回复可能这样），自动回复一句"可以，就按这个计划写吧"，
+第二轮的回复才是文档，裁判评的是文档。知识点太大的用例只跑一轮，看它有没有拦下来。
 上课由 skill 自带的 lesson.py 控制进度，这里不测。
 
   python3 eval/run.py                              # 跑 cases/ 下所有用例（Learn 用例需要 --learn-dir）
@@ -76,11 +76,10 @@ STAGES = {
     },
 }
 
-# 每个用例都在最后一条用户消息后面加上这段请求。两轮的用例，第一轮之后用 APPROVE 回复。
+# 每个用例都在最后一条用户消息后面加上这段请求。第一轮只给了计划时，用 APPROVE 回复。
 DOC_REQUEST = ("请先把这节课写成一份完整的 topic 文档（含全部题目，答案集中放在文末），写好后我们再按文档上课。"
                "本环境不能写文件，直接把文档作为回复输出。")
 APPROVE = "可以，就按这个计划写吧。"
-PLAN_CHECKS = ["no_h3:例子一", "no_h3:问题一"]   # 第一轮只给计划，不写文档
 
 BASELINE_SYSTEM = """你是一个耐心的学习助手，帮助用户学习。下面附上用户的工作区说明和本专题的规则，以及管理学习进度用的 topic-graph skill。\
 本环境里你不能调用工具：需要的命令输出会直接写在用户消息里，要写进文件的内容直接写在回复里。只写出你的下一条回复。"""
@@ -396,7 +395,7 @@ def judge(backend, model: str, case: dict, outputs: dict, rng: random.Random) ->
 
 
 def write(backend, args, case: dict, cond: str) -> tuple[str, str | None, dict]:
-    """写出被评的回复。两轮的用例先拿计划，再回复 APPROVE 拿文档。返回 (文档, 计划, 写作信息)。"""
+    """写出被评的回复。第一轮只给了计划时，回复 APPROVE 再拿文档。返回 (文档, 计划, 写作信息)。"""
     system = system_prompt(case, cond)
     r = backend.call(args.model, system, case["turns"])
     info = {"served": r["served"], "cost_usd": r["cost_usd"], "seconds": r["seconds"]}
@@ -412,8 +411,8 @@ def write(backend, args, case: dict, cond: str) -> tuple[str, str | None, dict]:
 
 def checks_for(case: dict, doc: str, plan: str | None) -> dict:
     checks = {c: run_check(c, doc) for c in case["checks"]}
-    if case["two_turn"]:   # 第一轮就写了文档时 plan 是 None，"先给计划"算没做到
-        checks.update({f"plan:{c}": plan is not None and run_check(c, plan) for c in PLAN_CHECKS})
+    if case["two_turn"]:   # 新版 skill 自查计划后直接写文档，第一轮停下等确认算没做到
+        checks["doc_in_first_turn"] = plan is None
     return checks
 
 

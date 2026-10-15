@@ -26,6 +26,11 @@ def step(path, command, *args, **kw):
     return lesson.run(path, command, *args, **kw)
 
 
+def now(out):
+    """这一轮要发的部分，不含预先给出的后续几轮。"""
+    return out.split("—— 预先给出")[0]
+
+
 def state(path):
     return json.loads(lesson.state_path(path).read_text())
 
@@ -38,7 +43,7 @@ def test_happy_path(topic):
     out = step(p, "answer", "c")
     assert "答对" in out and "### 问题解答一" in out and "### 问题二" in out
     out = step(p, "answer", "C")
-    assert "### 问题解答二" in out and "### 知识二" in out and "### 例子二" not in out
+    assert "### 问题解答二" in out and "### 知识二" in out and "### 例子二" not in now(out)
     assert "### 例子二" in step(p, "continue")
     assert "### 问题三" in step(p, "continue")
     step(p, "answer", "C")
@@ -111,3 +116,29 @@ def test_refuses_broken_doc(topic):
 def test_needs_start(topic):
     with pytest.raises(lesson.LessonError, match="start"):
         step(topic(), "continue")
+
+
+def test_lookahead_covers_continues_until_next_question(topic):
+    p = topic()
+    out = step(p, "start")
+    head, ahead = out.split("—— 预先给出")
+    assert "### 知识\n" in head and "### 例子一" not in head
+    assert ahead.index("### 例子一") < ahead.index("### 问题一")
+    assert "### 问题二" not in ahead
+    st = state(p)   # 进度已记到等回答问题一
+    assert st["stage"] == "question" and st["current"]["label"] == "问题一"
+    assert len(st["pending"]) == 2
+    assert "### 问题二" in step(p, "answer", "C")   # 不运行 continue 也能直接作答
+
+
+def test_lookahead_after_layer_and_extension(topic):
+    p = topic()
+    step(p, "start")
+    step(p, "answer", "C")
+    out = step(p, "answer", "C")
+    assert "### 知识二" in now(out)
+    assert "### 例子二" in out and "### 问题三" in out
+    step(p, "answer", "C")
+    out = step(p, "answer", "C")
+    assert "### 延伸" in now(out) and "### 回到全景" in out
+    assert state(p)["stage"] == "done"

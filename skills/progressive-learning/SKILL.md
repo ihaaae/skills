@@ -118,18 +118,20 @@ uv run <skill-dir>/scripts/check_topic.py <topic 文档> [--reading]
 
 ```
 uv run <skill-dir>/scripts/lesson.py <topic 文档> start              开始上课
-uv run <skill-dir>/scripts/lesson.py <topic 文档> continue           学习者读完了这一轮的新内容
+uv run <skill-dir>/scripts/lesson.py <topic 文档> continue           取出下一轮预先给出的内容（通常不用）
 uv run <skill-dir>/scripts/lesson.py <topic 文档> answer C           学习者答了题（开放题由你判断，用 --correct yes|no）
 uv run <skill-dir>/scripts/lesson.py <topic 文档> supplement --key B 登记你写的补充问题（开放题用 --open）
 uv run <skill-dir>/scripts/lesson.py <topic 文档> status             查看进度
 ```
 
-**每一轮先运行脚本，再照它的输出回复**：
+**学习者作答时先运行脚本，再照它的输出回复**；学习者说"继续"时，通常不用运行脚本：
+
+- 输出里"—— 预先给出的 N 轮"之后，是学习者之后每说一次"继续"要发的内容，进度已经记好。学习者说继续，就按顺序直接发下一轮，不运行脚本。原因：每次运行脚本都要多一次模型调用，而"继续"之后发什么是确定的。忘了发到哪一轮，运行 `continue`，它按顺序取出还没发的那一轮。
 
 - "照抄文档里的这一块"：原样发出，不改写、不合并、不跳过。
 - "你来写"：按下面的要求写。补充问题写好后，先用 `supplement` 登记，再发出。
 - "然后"：照做，到这里就停，不多发。
-- 学习者提问、没有作答时，直接回答，不运行脚本，进度不变。
+- 学习者提问、没有作答时，直接回答，不运行脚本，进度不变；预先给出的下一轮等学习者说继续再发。
 - 不要凭记忆判断进度。不确定时运行 `status`。
 
 你要写的内容：

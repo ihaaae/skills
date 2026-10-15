@@ -32,7 +32,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_topic import H2_RE, H3_RE, check, cn, sections
 
-KEY_LETTER_RE = re.compile(r"^\s*\**([A-E])\**(?=[\s。.，,：:、]|$)")
+KEY_LETTER_RE = re.compile(r"^\s*\**([A-E])\**(?=[\s。.，,：:、（(]|$)")
 STOP_READ = "停，等学习者读完。结尾用一句话收住，如\"读完有疑问就问，没问题就说继续\"。"
 STOP_ANSWER = "停，等学习者回答。"
 FINISH = ("课上完了。把课上写的补充例子、补充问题连同解析，补进文档末尾的 `## 课上补充`"

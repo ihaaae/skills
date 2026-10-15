@@ -1,6 +1,6 @@
 # progressive-learning eval
 
-对比 `skills/progressive-learning` 有没有让教学变好：同一个场景，让模型带 skill 和不带 skill 各写一遍"下一条回复"，再比较两份回复。skill 的流程是先把一个知识点写成 topic 文档，再按文档上课。eval 只测写文档。skill 要求先给出判断和分层计划、等用户确认再写，所以写文档的用例跑两轮：第一轮拿到计划，自动回复"可以，就按这个计划写吧"，第二轮的回复才是文档，裁判评文档，计划另存为 `outputs/*.plan.md`；第一轮就直接写出文档的（不带 skill 的 baseline 常这样），直接拿它当文档。知识点太大的 D02 只跑一轮，看它有没有拦下来。上课的进度由 skill 自带的 `scripts/lesson.py` 控制，有单元测试，这里不测。本目录只放开发用的 eval，不会被安装。
+对比 `skills/progressive-learning` 有没有让教学变好：同一个场景，让模型带 skill 和不带 skill 各写一遍"下一条回复"，再比较两份回复。skill 的流程是先把一个知识点写成 topic 文档，再按文档上课。eval 只测写文档。skill 要求先写分层计划、按清单自查，通过后直接写文档，不等用户确认，所以第一轮就应该拿到文档（格式检查 `doc_in_first_turn`）。第一轮只给了计划、停下等确认的，自动回复"可以，就按这个计划写吧"，第二轮的回复才是文档，裁判评文档，计划另存为 `outputs/*.plan.md`。知识点太大的 D02 只跑一轮，看它有没有拦下来。上课的进度由 skill 自带的 `scripts/lesson.py` 控制，有单元测试，这里不测。本目录只放开发用的 eval，不会被安装。
 
 ## 怎么比
 

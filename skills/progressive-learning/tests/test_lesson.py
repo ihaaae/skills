@@ -142,3 +142,15 @@ def test_lookahead_after_layer_and_extension(topic):
     out = step(p, "answer", "C")
     assert "### 延伸" in now(out) and "### 回到全景" in out
     assert state(p)["stage"] == "done"
+
+
+@pytest.mark.parametrize("key, letter", [
+    ("**C**。解析", "C"),
+    ("**C**（`Ann Bob Ann`）。照判断方法", "C"),   # F3 问题二：字母后紧跟全角括号
+    ("B (prints 5)", "B"),
+    ("C", "C"),
+    ("Cat 不是答案", None),
+    ("开放题，看学习者的解释", None),
+])
+def test_correct_letter(key, letter):
+    assert lesson.correct_letter(key) == letter

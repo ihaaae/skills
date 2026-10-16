@@ -25,7 +25,7 @@ targets: []               # optional, see "IDs, groups, and edges"
 status: "mastered"        # new | taught | mastered | retired
 caveat: ""                # optional: scope in which a ✅ still holds
 updated: 2026-09-29
-verified: 2026-09-29      # written by `set … mastered`; drives review (section J)
+verified: 2026-09-29      # written by `set … mastered`: the last day it was verified
 mode: ""                  # optional: "reading" for a reading node
 source: ""                # optional: where the node's material is, e.g. "book.md:1312-1381"
 depth: ""                 # optional: write | read | aware

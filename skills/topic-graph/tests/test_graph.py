@@ -129,13 +129,6 @@ def test_set_mastered_writes_verified(topic):
     assert "verified" not in (topic / "nodes/A/A2.md").read_text()
 
 
-def test_review_due_old_mastered_with_dependents(topic):
-    g = graph.load(topic)  # A1 mastered, updated 2026-01-01, A2/B1 depend on it
-    due = g.review_due(graph.dt.date(2026, 2, 1))
-    assert [r[0] for r in due] == ["A1"]
-    assert g.review_due(graph.dt.date(2026, 1, 5)) == []
-
-
 def test_retro_reasons(topic):
     log = [{"ts": "2026-01-01T10:00:00", "id": "A1", "from": "taught", "to": "mastered"},
            {"ts": "2026-01-02T10:00:00", "id": "A1", "from": "mastered", "to": "taught"},
@@ -150,7 +143,7 @@ def test_retro_reasons(topic):
     assert g.retro_reasons(graph.dt.date(2026, 1, 4)) == []
 
 
-def test_retro_ignores_review_refresh(topic):
+def test_retro_ignores_mastered_refresh(topic):
     node(topic, "C1", "c1", status="mastered")
     (topic / "retro.md").write_text("# retro\n\n## 2026-01-03\n- ok\n")
     refresh = {"ts": "2026-01-04T10:00:00", "id": "C1", "from": "mastered", "to": "mastered"}

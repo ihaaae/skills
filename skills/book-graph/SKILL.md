@@ -17,7 +17,7 @@ The book is a scaffold, not the authority on order or depth. The learner's goal 
 | Skill | Owns |
 |---|---|
 | **book-graph** (this) | Turning a book into the plan: the section → node map, coverage, depth, cut rules, prerequisites from the text, calibration with the learner |
-| **topic-graph** | Node files, statuses, `graph.py`, the session loop, review, retro — unchanged. Everything there applies unless this skill says otherwise below |
+| **topic-graph** | Node files, statuses, `graph.py`, the session loop, retro — unchanged. Everything there applies unless this skill says otherwise below |
 | **progressive-learning** | Teaching one node |
 | **epub-to-markdown** | Converting the `.epub` into one line-numbered Markdown file |
 

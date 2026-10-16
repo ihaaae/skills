@@ -39,7 +39,6 @@ goal:
     targets: ["B7"]         # end-point nodes; their ancestors form the goal path
     question: "…"           # one concrete question, in the learner's terms
 rhythm:                     # optional; defaults shown
-  review_after_days: 14     # a ✅ older than this, with dependents, is offered for review
   retro_gap_days: 7         # suggest a retro after this long without a status change
   retro_every_changes: 12   # …or after this many status changes since the last retro
 ```
@@ -56,7 +55,7 @@ rhythm:                     # optional; defaults shown
 4. **Bottleneck**: more transitive dependents first.
 5. Track order, then ID.
 
-It also names one side-group node as a "change of pace", a retro to hold first (upkeep.md, I), and the ✅ node most due for review (upkeep.md, J).
+It also names one side-group node as a "change of pace" and a retro to hold first (upkeep.md, I). It doesn't schedule reviews of ✅ nodes; that belongs to the spaced-repetition skill (upkeep.md, J).
 
 In the `Learn/` workspace, `mise run graph <command>` runs the script from the current directory; `mise run test` runs its tests.
 
@@ -66,7 +65,7 @@ Rules and preferences pile up from many corrections. Put each in exactly one pla
 
 | Scope | Place | Examples |
 |---|---|---|
-| How to teach and track *any* subject, for *any* learner | the skills | explain only with ✅ concepts; map/synthesis nodes; motivation + picture; retro and review |
+| How to teach and track *any* subject, for *any* learner | the skills | explain only with ✅ concepts; map/synthesis nodes; motivation + picture; retro |
 | One learner, *every* topic in a workspace | the workspace's `AGENTS.md` (e.g. `Learn/AGENTS.md`) | teaching language and term style; how this learner likes questions; workspace layout and tooling; the session routine |
 | One topic | the topic's `rules.md` (domain rules), `goals.md` (goal, altitude, non-goals, route), `topic.yaml` | altitude ("architect: test design consequences"); domain anchors and source quirks |
 | How to enter a topic | the topic's own `AGENTS.md`, a few lines | what the material is, where it lives, that it is read-only |

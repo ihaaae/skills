@@ -57,7 +57,7 @@ class Node:
     updated: str
     body: str
     path: Path
-    verified: str = ""   # 最近一次验证为 ✅ 的日期（复习排期用）
+    verified: str = ""   # 最近一次验证为 ✅ 的日期
 
     @property
     def num(self) -> int:
@@ -77,24 +77,6 @@ class Graph:
     def rhythm(self, key: str, default: int) -> int:
         return int((self.config.get("rhythm") or {}).get(key, default))
 
-    # ---- 复习：✅ 会被遗忘 ----
-    def review_due(self, today: dt.date | None = None) -> list[tuple[str, int, int]]:
-        """(id, 距上次验证天数, 后代数)：久未验证、又有后续节点依赖的 ✅，依赖多、隔得久的在前。"""
-        today = today or dt.date.today()
-        after = self.rhythm("review_after_days", 14)
-        out = []
-        for i, n in self.live().items():
-            if n.status != "mastered" or not n.verified:
-                continue
-            try:
-                age = (today - dt.date.fromisoformat(n.verified[:10])).days
-            except ValueError:
-                continue
-            desc = len(self.descendants(i))
-            if age >= after and desc:
-                out.append((i, age, desc))
-        return sorted(out, key=lambda r: (-r[2], -r[1], r[0]))
-
     # ---- retro：外循环（目标与学法是否还对） ----
     def last_retro(self) -> dt.date | None:
         f = self.root / "retro.md"
@@ -106,7 +88,7 @@ class Graph:
     def retro_reasons(self, today: dt.date | None = None) -> list[str]:
         today = today or dt.date.today()
         last = self.last_retro()
-        # 复习刷新（mastered → mastered）只更新 verified，不是状态变化，不计入
+        # 重新 set mastered（mastered → mastered）只更新 verified，不是状态变化，不计入
         since = [e for e in self.log if e.get("from") != e.get("to")
                  and (last is None or dt.date.fromisoformat(e["ts"][:10]) > last)]
         why = []
@@ -488,10 +470,6 @@ def cmd_next(g: Graph, a) -> int:
     side = next((r for r in rows if not r["main"] and r["kind"] == "learn"), None)
     if side and side is not top:
         print(f"换口味：{side['id']}  {side['title']}")
-    rev = g.review_due()
-    if rev:
-        i, age, desc = rev[0]
-        print(f"复习：{i}  {g.nodes[i].title}（{age} 天前验证，{desc} 个后续节点依赖它）——课前一道题；对了 set mastered 刷新日期，错了降为 taught")
     return 0
 
 
@@ -517,7 +495,7 @@ def cmd_preflight(g: Graph, a) -> int:
     if n.status == "retired":
         sys.exit(f"{a.id} 已废止，并入 {n.merged_into}")
     if n.status == "mastered":
-        print(f"{a.id} 已是 ✅，无需再教（除非要复习）。")
+        print(f"{a.id} 已是 ✅，无需再教。")
     elif not g.prereqs_ok(a.id):
         miss = [p for p in n.prereqs if g.nodes[p].status != "mastered"]
         print(f"✗ 不能讲 {a.id}：前置未满足 → " + ", ".join(f"{p}({ICON[g.derived(p)]})" for p in miss))
@@ -671,9 +649,6 @@ def render_state(g: Graph) -> str:
     out += ["", "## 下一步", ""]
     for r in g.retro_reasons():
         out.append(f"- **建议先做 retro**：{r}")
-    rev = g.review_due()
-    if rev:
-        out.append("- 待复习的 ✅（久未验证、被依赖）：" + "、".join(f"{i}（{age} 天）" for i, age, _ in rev[:5]))
     rows = rank(g)
     if rows:
         top = rows[0]

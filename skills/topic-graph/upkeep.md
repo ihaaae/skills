@@ -1,6 +1,6 @@
-# Retro and review
+# Retro and keeping ✅
 
-Read section I when `graph.py next` suggests a retro or the learner sounds stuck; read section J when `next` names a ✅ node due for review.
+Read section I when `graph.py next` suggests a retro or the learner sounds stuck; read section J when a ✅ node turns out to have faded.
 
 ## I. Retrospective: the outer loop
 
@@ -24,12 +24,11 @@ Also hold one whenever the learner sounds stuck or unmotivated, whatever the scr
 - Apply each change at the right layer ("Where things live" in files.md): goal and route → `goals.md` / `topic.yaml`; topic rule → `rules.md`; teaching method → the skills; learner-wide preference → workspace `AGENTS.md`.
 - Promote any auto-memories collected since the last retro, and delete them once promoted.
 
-## J. Review: ✅ fades
+## J. Keeping ✅: spaced repetition, not review lessons
 
-A ✅ records that the learner showed understanding *on that day*. Weeks later, a node that many others build on may have faded, and lessons standing on it start to wobble. `next` names the ✅ node most due for review: verified at least `review_after_days` ago, with dependents, the most depended-on first.
+A ✅ records that the learner showed understanding *on that day*; weeks later it may have faded. Keeping it is not this skill's job. With the spaced-repetition skill installed, each ✅ node's key facts become small atoms, and Anki's scheduler decides when each one comes back. This skill doesn't schedule reviews, and lessons don't open with a review question.
 
-- Review costs one question, asked at the start of a lesson: an isomorphic question from that node's top layer, written from its summary.
-- Right → `set ID mastered` again, which refreshes `verified`.
-- Wrong → `set ID taught`. Re-teach briefly (usually one example and two questions), then set it again. The demotion warning lists the ✅ descendants to re-check.
-- Never review more than one node per lesson unless the learner asks. Review is upkeep, not the lesson.
-- Review and misconception retests serve the current goals. When the content in question lies outside them (a deferred phase, a non-goal), wait until that scope returns, even if the node is an ancestor of something on the path; a needed correction can be stated in one line without a question.
+Two things stay here:
+
+- **A gap that review exposes.** When a card keeps failing because the understanding is missing (not because the card is badly written), the learner may set the node back: `set ID taught`. The demotion warning lists the ✅ descendants to re-check. Re-teach briefly (usually one example and two questions), then `set ID mastered` again.
+- **Misconception retests** (`debts.md`) serve the current goals. When the content in question lies outside them (a deferred phase, a non-goal), wait until that scope returns, even if the node is an ancestor of something on the path; a needed correction can be stated in one line without a question.

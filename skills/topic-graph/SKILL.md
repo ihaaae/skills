@@ -1,6 +1,6 @@
 ---
 name: topic-graph
-description: Tracks the learning of a difficult subject as a prerequisite graph of small topic nodes (each under 25 minutes including exercises), stored one file per node in a topic directory with topic.yaml. A bundled script computes the frontier, retests, reviews and the next node to learn, and records mastery. Covers building or re-goaling a graph, diagnosing prior knowledge, choosing the next node, and recording progress. Use when someone wants to learn a complex topic across multiple sessions, works in a directory containing topic.yaml or nodes/, asks what to learn next, wants a roadmap or curriculum with prerequisites, or asks to be taught something too big for one short lesson (知识图谱、学习进度、下一步学什么), even if they never say "graph".
+description: Tracks the learning of a difficult subject as a prerequisite graph of small topic nodes (each under 25 minutes including exercises), stored one file per node in a topic directory with topic.yaml. A bundled script computes the frontier, retests and the next node to learn, and records mastery. Covers building or re-goaling a graph, diagnosing prior knowledge, choosing the next node, and recording progress. Use when someone wants to learn a complex topic across multiple sessions, works in a directory containing topic.yaml or nodes/, asks what to learn next, wants a roadmap or curriculum with prerequisites, or asks to be taught something too big for one short lesson (知识图谱、学习进度、下一步学什么), even if they never say "graph".
 ---
 
 # Topic Graph
@@ -18,7 +18,7 @@ Most sessions need only this file. Read a reference in full when its situation c
 | [teaching.md](teaching.md) | preparing or teaching a node (core rules, preflight, big picture); a question from outside the graph; a later node corrects an earlier one |
 | [building.md](building.md) | A. no topic directory yet; H. the learner changes their goal |
 | [diagnosis.md](diagnosis.md) | C. testing what the learner already knows |
-| [upkeep.md](upkeep.md) | I. `next` suggests a retro or the learner seems stuck; J. `next` names a node due for review |
+| [upkeep.md](upkeep.md) | I. `next` suggests a retro or the learner seems stuck; J. a ✅ node turns out to have faded |
 | [nodes.md](nodes.md) | adding or reshaping nodes; node file format; sizing a node; `source`, `depth`, `mode`, `references/` |
 | [files.md](files.md) | the topic directory layout, editing `topic.yaml` by hand, how `next` ranks, where a rule or preference belongs |
 
@@ -33,7 +33,7 @@ uv run <skill-dir>/scripts/graph.py <command>
 | Command | Use |
 |---|---|
 | `check` | Validate the graph. Exit 1 on errors. |
-| `next [-n N] [--json]` | What to learn next, with reasons and the route to the goal; a retro to hold first, if any; the ✅ node most due for review. |
+| `next [-n N] [--json]` | What to learn next, with reasons and the route to the goal; a retro to hold first, if any. |
 | `preflight ID` | Refuses a locked node; otherwise prints what a lesson on it may use. |
 | `show ID` | Node, its status, prereqs, dependents. |
 | `set ID mastered\|taught\|new [--caveat "…"]` | Record status. `mastered` stamps `verified` with today's date and refuses if prereqs aren't ✅. |
@@ -63,8 +63,9 @@ Session progress:
 - [ ] Read rules.md and goals.md
 - [ ] graph.py check — fix and re-run until clean
 - [ ] graph.py next — offer a retro if suggested; recommend; learner picks
-- [ ] Teach the node (teaching.md; review question first if next names one — upkeep.md J)
+- [ ] Teach the node (teaching.md)
 - [ ] Record: node summary, then graph.py set
+- [ ] Node now ✅ and the spaced-repetition skill installed: draft its atoms there
 - [ ] Update debts/open-questions/glossary/sources; graph.py sync until clean
 ```
 

@@ -85,6 +85,7 @@ A row in `book-map.md` is a node. Size it by these rules, then by topic-graph's 
 5. **Depth sets capacity.** A read or aware node can hold more, because nothing in it is tested by writing.
 6. **Leaving the book's order is allowed when stated.** Put a phenomenon and its explanation together when the book separates them by chapters ("Go is call by value" in Ch5 and "why maps and slices behave differently" in Ch6 became one node after pointers). Write the reason in the evidence column.
 7. **At preflight, topic-graph's 25-minute tests have the last word.** If a row fails them, it becomes several nodes: the original ID keeps the first part, `graph.py add` creates the others, and the `book-map.md` row lists all of them with their sub-ranges.
+8. **A node's scope is its topic, not every paragraph in its range.** A sidebar on another topic belongs to the node that owns that topic: note the move in both nodes' evidence columns, and if the owning node comes later, record it in `debts.md` as a forward reference. (Learning Go's `go fmt` section holds a "Semicolon Insertion Rule" sidebar. A toolchain lesson built an example on it; the learner pointed out it is syntax, not toolchain, and it moved to the syntax node.)
 
 ### Prerequisites
 
@@ -145,4 +146,5 @@ Each verdict the learner confirms becomes a calibration example in `book-map.md`
 A lesson in a book-based topic is an ordinary topic-graph lesson: the node's `source` and `depth` fields work as topic-graph "Source and depth" describes, and the learner doesn't read the book unless a reading node assigns sections (topic-graph core rule 10, in teaching.md). This skill comes back into play only when the plan changes:
 
 - When a node is split or its range changes, update its `book-map.md` row in the same edit, then re-run `check`.
+- When a lesson finds a sidebar on another topic inside the node's range, move it under cut rule 8 instead of teaching it here.
 - When the learner, having learned a part, wants its depth raised or lowered, change the node's `depth`, its `book-map.md` row, and record why in `goals.md`.

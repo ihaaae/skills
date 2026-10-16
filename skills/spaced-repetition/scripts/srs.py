@@ -3,23 +3,18 @@
 # requires-python = ">=3.10"
 # dependencies = ["anki==26.9.3", "markdown-it-py", "pyyaml"]
 # ///
-"""spaced-repetition: 用 Anki 的 collection 格式和 FSRS 调度做间隔重复，不用 Anki 软件。
+"""spaced-repetition: 用 Anki 的 collection 格式和 FSRS 调度做间隔重复；复习在 Anki 桌面版里做。
 
 卡片内容的来源是专题里的 srs/<节点ID>.yaml（进 git）；调度和复习记录在本地 collection 里（不进 git）。
-collection 路径：$LEARN_SRS_COLLECTION，默认 ~/.local/share/learn-srs/collection.anki2；
-session.json（当前卡片、可撤销的上一次评分）和 backups/ 放在它旁边。
+collection 路径：$LEARN_SRS_COLLECTION，默认 ~/.local/share/learn-srs/collection.anki2；backups/ 放在它旁边。
+本脚本写 collection 时，Anki 桌面版不能打开它。
 
 用法（在专题目录内运行，或用 --root 指定；在含多个专题的工作区根目录运行则覆盖全部专题）：
   srs.py check                   校验 atom 文件；有错误时退出码为 1
   srs.py sync [--apply] [--delete] 把 atom 同步进 collection；默认只显示计划
   srs.py counts                  现在到期的 new / learning / review 张数
-  srs.py next                    显示当前卡片的正面
-  srs.py reveal                  显示背面和四个评分各自的间隔
-  srs.py answer 1|2|3|4          评分（Again/Hard/Good/Easy），并显示下一张
-  srs.py undo                    撤销上一次评分（只能一步）
-  srs.py done                    结束复习：保存、备份、汇总
-  srs.py flag N [ATOM]           给当前卡片（或 ATOM 的所有卡片）设 flag 1-7，0 清除
-  srs.py bury [ATOM] / suspend [ATOM] / unsuspend ATOM
+  srs.py flag N ATOM             给 ATOM 的所有卡片设 flag 1-7，0 清除
+  srs.py suspend ATOM / unsuspend ATOM
   srs.py leeches / flagged       需要维护的卡片
   srs.py card ATOM               一个 atom 的内容、调度和复习记录
   srs.py stats / backup
@@ -29,11 +24,9 @@ ATOM 写成 <节点>/<atom id>（在专题内）或 <专题>/<节点>/<atom id>�
 from __future__ import annotations
 
 import argparse
-import base64
 import datetime as dt
 import hashlib
 import html
-import json
 import os
 import re
 import sys
@@ -255,16 +248,6 @@ def strip_html(s: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", s).strip()
 
 
-def cloze_side(text: str, n: int, answer: bool) -> str:
-    def sub(m: re.Match) -> str:
-        if int(m.group(1)) != n:
-            return m.group(2)
-        if answer:
-            return f"[{m.group(2)}]"
-        return f"[{m.group(3)}]" if m.group(3) else "[...]"
-    return CLOZE_RE.sub(sub, text)
-
-
 def source_line(topic: Topic, atom: Atom) -> str:
     node = topic.nodes.get(atom.node)
     parts = [topic.name, node.title if node else atom.node]
@@ -361,13 +344,6 @@ def notes_for_atom(col, atom_id: str) -> list:
 
 def deck_id(col, name: str):
     return col.decks.id_for_name(name)
-
-
-def require_deck(col, scope: Scope) -> int:
-    did = deck_id(col, scope.deck)
-    if not did:
-        sys.exit(f"collection 里还没有 {scope.deck}：先写 atom，再 srs.py sync --apply。")
-    return did
 
 
 def resolve_atom(scope: Scope, ref: str) -> str:
@@ -513,52 +489,7 @@ def cmd_sync(scope: Scope, args) -> None:
         col.close()
 
 
-# ───────────────────────── 复习 session ─────────────────────────
-
-def session_path() -> Path:
-    return collection_path().parent / "session.json"
-
-
-def empty_session(deck: str) -> dict:
-    return {"deck": deck, "current": None, "last": None, "tally": {"1": 0, "2": 0, "3": 0, "4": 0}}
-
-
-def load_session(col, scope: Scope) -> dict:
-    p = session_path()
-    if p.exists():
-        try:
-            s = json.loads(p.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            s = None
-        if s and s.get("deck") == scope.deck:
-            return s
-    return empty_session(scope.deck)
-
-
-def save_session(s: dict) -> None:
-    session_path().write_text(json.dumps(s, ensure_ascii=False), encoding="utf-8")
-
-
-def get_card(col, cid: int):
-    from anki.errors import NotFoundError
-    try:
-        return col.get_card(cid)
-    except NotFoundError:
-        return None
-
-
-def card_snapshot(card) -> str:
-    return base64.b64encode(card._to_backend_card().SerializeToString()).decode()
-
-
-def restore_card(col, snapshot: str, keep_flags: int) -> None:
-    """把卡片的调度恢复到 snapshot；flag 保留现在的值。"""
-    from anki.cards_pb2 import Card as BackendCard
-    bc = BackendCard()
-    bc.ParseFromString(base64.b64decode(snapshot))
-    bc.flags = keep_flags
-    col._backend.update_cards(cards=[bc], skip_undo_entry=True)
-
+# ───────────────────────── 单张卡片操作 ─────────────────────────
 
 def queue_label(card) -> str:
     if card.queue == 0:
@@ -589,192 +520,6 @@ def atom_for_card(scope: Scope, card) -> tuple[Atom, str]:
     return atom, strip_html(note["Source"])
 
 
-def show_front(col, scope: Scope, s: dict, card) -> None:
-    new, lrn, rev = col.sched.counts()
-    atom, src = atom_for_card(scope, card)
-    tag = f" c{card.ord + 1}" if atom.kind == "cloze" else ""
-    print(f"[{scope.deck}] new {new} · learning {lrn} · review {rev}")
-    print(f"{atom.atom_id}{tag} · {queue_label(card)}")
-    print(src)
-    print(RULE)
-    print(atom.front if atom.kind == "basic" else cloze_side(atom.cloze, card.ord + 1, False))
-
-
-def advance(col, scope: Scope, s: dict) -> None:
-    """显示当前卡片；没有当前卡片时从队列取下一张。"""
-    cur = s.get("current")
-    if cur:
-        card = get_card(col, cur["cid"])
-        if card is not None and card.queue >= 0:
-            show_front(col, scope, s, card)
-            return
-        s["current"] = None
-    cards = [c.card for c in col.sched.get_queued_cards(fetch_limit=1).cards]
-    if not cards:
-        save_session(s)
-        print(f"[{scope.deck}] 现在没有到期的卡片。用 srs.py done 结束这次复习。")
-        return
-    card = col.get_card(cards[0].id)
-    s["current"] = {"cid": card.id, "revealed": False}
-    save_session(s)
-    show_front(col, scope, s, card)
-
-
-def with_session(fn):
-    def run(scope: Scope, args) -> None:
-        col = open_col()
-        try:
-            did = require_deck(col, scope)
-            col.decks.select(did)
-            s = load_session(col, scope)
-            fn(col, scope, s, args)
-        finally:
-            col.close()
-    return run
-
-
-@with_session
-def cmd_next(col, scope, s, args) -> None:
-    advance(col, scope, s)
-
-
-def current_card(col, s: dict):
-    cur = s.get("current")
-    card = get_card(col, cur["cid"]) if cur else None
-    if card is None:
-        sys.exit("现在没有显示中的卡片：先 srs.py next。")
-    return card
-
-
-@with_session
-def cmd_reveal(col, scope, s, args) -> None:
-    card = current_card(col, s)
-    atom, _ = atom_for_card(scope, card)
-    print(RULE)
-    if atom.kind == "basic":
-        print(atom.back)
-    else:
-        print(cloze_side(atom.cloze, card.ord + 1, True))
-        if atom.extra:
-            print()
-            print(atom.extra)
-    print(RULE)
-    states = col._backend.get_scheduling_states(card.id)
-    labels = [re.sub("[⁨⁩]", "", x) for x in col.sched.describe_next_states(states)]
-    print("   ".join(f"{i + 1} {name} · {ivl}" for i, (name, ivl) in enumerate(zip(RATINGS, labels))))
-    s["current"]["revealed"] = True
-    save_session(s)
-
-
-@with_session
-def cmd_answer(col, scope, s, args) -> None:
-    card = current_card(col, s)
-    if not s["current"].get("revealed"):
-        sys.exit("还没有 reveal：先 srs.py reveal，看过答案再评分。")
-    from anki.scheduler.v3 import CardAnswer
-    note = card.note()
-    was_leech = "leech" in note.tags
-    snapshot = card_snapshot(card)
-    card.start_timer()
-    states = col._backend.get_scheduling_states(card.id)
-    rating = [CardAnswer.AGAIN, CardAnswer.HARD, CardAnswer.GOOD, CardAnswer.EASY][args.rating - 1]
-    ans = col.sched.build_answer(card=card, states=states, rating=rating)
-    ans.milliseconds_taken = 0
-    col.sched.answer_card(ans)
-    revlog_id = col.db.scalar("select max(id) from revlog where cid = ?", card.id)
-    after = col.get_card(card.id)
-    became_leech = not was_leech and "leech" in after.note().tags
-    s["last"] = {"cid": card.id, "rating": args.rating, "snapshot": snapshot,
-                 "revlog_id": revlog_id, "became_leech": became_leech}
-    s["tally"][str(args.rating)] += 1
-    s["current"] = None
-    print(f"已记下 {RATINGS[args.rating - 1]}。")
-    if became_leech:
-        print(f"（{note['AtomID']} 已失败 {after.lapses} 次，成为 leech；复习结束后一起看看）")
-    advance(col, scope, s)
-
-
-@with_session
-def cmd_undo(col, scope, s, args) -> None:
-    last = s.get("last")
-    card = get_card(col, last["cid"]) if last else None
-    if card is None:
-        sys.exit("没有可以撤销的评分（只能撤销最近一次，且要在同一次复习里）。")
-    # 只恢复这张卡片的调度和复习记录；Anki 记的"今天已复习张数"不回退，最多让今天的上限差一张。
-    restore_card(col, last["snapshot"], card.flags)
-    col.db.execute("delete from revlog where id = ?", last["revlog_id"])
-    if last.get("became_leech"):
-        note = card.note()
-        note.remove_tag("leech")
-        col.update_note(note, skip_undo_entry=True)
-    s["tally"][str(last["rating"])] -= 1
-    s["last"] = None
-    s["current"] = {"cid": card.id, "revealed": False}
-    save_session(s)
-    print(f"已撤销 {RATINGS[last['rating'] - 1]}，重新显示这张卡片。")
-    advance(col, scope, s)
-
-
-@with_session
-def cmd_done(col, scope, s, args) -> None:
-    tally = s["tally"]
-    total = sum(tally.values())
-    session_path().unlink(missing_ok=True)
-    make_backup(col)
-    new, lrn, rev = col.sched.counts()
-    print(f"本次复习 {total} 张：" + " · ".join(f"{RATINGS[i]} {tally[str(i + 1)]}" for i in range(4)))
-    print(f"[{scope.deck}] 还剩 new {new} · learning {lrn} · review {rev}（learning 的卡片可能几分钟后又到期）")
-    leeches = len(col.find_cards(f'"deck:{search_escape(scope.deck)}" tag:leech -is:suspended'))
-    flagged = len(col.find_cards(f'"deck:{search_escape(scope.deck)}" -flag:0'))
-    if leeches or flagged:
-        print(f"需要维护：leech {leeches} 张，flagged {flagged} 张（srs.py leeches / flagged）。")
-
-
-# ───────────────────────── 单张卡片操作 ─────────────────────────
-
-def target_cards(col, scope: Scope, s: dict, ref: str | None) -> tuple[list[int], bool]:
-    """返回 (卡片 id 列表, 是否作用于当前卡片)。"""
-    if ref:
-        _, cards = atom_cards(col, scope, ref)
-        return [c.id for c in cards], False
-    return [current_card(col, s).id], True
-
-
-@with_session
-def cmd_flag(col, scope, s, args) -> None:
-    if not 0 <= args.n <= 7:
-        sys.exit("flag 是 0（清除）到 7。")
-    cids, _ = target_cards(col, scope, s, args.atom)
-    col.set_user_flag_for_cards(args.n, cids)
-    print(f"已{'清除 flag' if args.n == 0 else f'设 flag {args.n}'}：{len(cids)} 张卡片。")
-
-
-@with_session
-def cmd_bury(col, scope, s, args) -> None:
-    cids, is_current = target_cards(col, scope, s, args.atom)
-    col.sched.bury_cards(cids, manual=True)
-    if s.get("last") and s["last"]["cid"] in cids:
-        s["last"] = None
-        save_session(s)
-    print(f"已 bury {len(cids)} 张卡片，明天再出现。")
-    if is_current:
-        s["current"] = None
-        advance(col, scope, s)
-
-
-@with_session
-def cmd_suspend(col, scope, s, args) -> None:
-    cids, is_current = target_cards(col, scope, s, args.atom)
-    col.sched.suspend_cards(cids)
-    if s.get("last") and s["last"]["cid"] in cids:
-        s["last"] = None
-        save_session(s)
-    print(f"已 suspend {len(cids)} 张卡片，unsuspend 之前不再出现。")
-    if is_current:
-        s["current"] = None
-        advance(col, scope, s)
-
-
 def with_col(fn):
     def run(scope: Scope, args) -> None:
         col = open_col()
@@ -784,6 +529,21 @@ def with_col(fn):
             col.close()
     return run
 
+
+@with_col
+def cmd_flag(col, scope, args) -> None:
+    if not 0 <= args.n <= 7:
+        sys.exit("flag 是 0（清除）到 7。")
+    aid, cards = atom_cards(col, scope, args.atom)
+    col.set_user_flag_for_cards(args.n, [c.id for c in cards])
+    print(f"已{'清除 flag' if args.n == 0 else f'设 flag {args.n}'}：{aid}（{len(cards)} 张卡片）。")
+
+
+@with_col
+def cmd_suspend(col, scope, args) -> None:
+    aid, cards = atom_cards(col, scope, args.atom)
+    col.sched.suspend_cards([c.id for c in cards])
+    print(f"已 suspend {aid}（{len(cards)} 张卡片），unsuspend 之前不再出现。")
 
 @with_col
 def cmd_unsuspend(col, scope, args) -> None:
@@ -909,23 +669,19 @@ def cmd_backup(col, scope, args) -> None:
 # ───────────────────────── 入口 ─────────────────────────
 
 def main(argv: list[str] | None = None) -> None:
-    ap = argparse.ArgumentParser(description="间隔重复：Anki collection + FSRS，不用 Anki 软件。")
+    ap = argparse.ArgumentParser(description="间隔重复：Anki collection + FSRS；复习在 Anki 桌面版里做。")
     ap.add_argument("--root", help="专题目录（含 topic.yaml）或含多个专题的工作区目录")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("check")
     p = sub.add_parser("sync")
     p.add_argument("--apply", action="store_true")
     p.add_argument("--delete", action="store_true", help="删除不在 YAML 里的 atom（默认只 suspend）")
-    for name in ["counts", "next", "reveal", "undo", "done", "leeches", "flagged", "stats", "backup"]:
+    for name in ["counts", "leeches", "flagged", "stats", "backup"]:
         sub.add_parser(name)
-    p = sub.add_parser("answer")
-    p.add_argument("rating", type=int, choices=[1, 2, 3, 4])
     p = sub.add_parser("flag")
     p.add_argument("n", type=int)
-    p.add_argument("atom", nargs="?")
-    for name in ["bury", "suspend"]:
-        sub.add_parser(name).add_argument("atom", nargs="?")
-    for name in ["unsuspend", "card"]:
+    p.add_argument("atom")
+    for name in ["suspend", "unsuspend", "card"]:
         sub.add_parser(name).add_argument("atom")
     args = ap.parse_args(argv)
     scope = find_scope(args.root)

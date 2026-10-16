@@ -140,14 +140,6 @@ def test_check_warnings(topic):
 
 # ───────────── rendering ─────────────
 
-def test_cloze_side():
-    text = "rune 是 {{c1::code point}} 的 type，是 {{c2::int32::整数}} 的 alias。"
-    assert srs.cloze_side(text, 1, False) == "rune 是 [...] 的 type，是 int32 的 alias。"
-    assert srs.cloze_side(text, 1, True) == "rune 是 [code point] 的 type，是 int32 的 alias。"
-    assert srs.cloze_side(text, 2, False) == "rune 是 code point 的 type，是 [整数] 的 alias。"
-    assert srs.cloze_side(text, 2, True) == "rune 是 code point 的 type，是 [int32] 的 alias。"
-
-
 def test_search_escape():
     assert srs.search_escape('a_b*c"d\\') == 'a\\_b\\*c\\"d\\\\'
 
@@ -175,14 +167,20 @@ def test_sync_plan_apply_idempotent(topic):
     assert "collection 已是最新，没有变化。" in run(topic, "sync").stdout
 
 
+def rate(col, cid, rating):
+    """像在 Anki 里复习一样评一次分。"""
+    card = col.get_card(cid)
+    card.start_timer()
+    states = col._backend.get_scheduling_states(cid)
+    col.sched.answer_card(col.sched.build_answer(card=card, states=states, rating=rating))
+
+
 def test_sync_edit_keeps_schedule(topic):
+    from anki.scheduler.v3 import CardAnswer
     run(topic, "sync", "--apply")
     (cid,) = make_due("Golang/C3/index-is-byte")
-    run(topic, "next")
-    run(topic, "reveal")
-    run(topic, "answer", "3")
-    run(topic, "done")
     with Col() as col:
+        rate(col, cid, CardAnswer.GOOD)
         before = col.get_card(cid)
         due, ivl = before.due, before.ivl
     edit_atoms(topic, C3_ATOMS.replace("`71`。", "`71`，一个 `uint8` 数字。"))
@@ -266,149 +264,38 @@ def test_sync_refuses_on_lint_error(topic):
     assert "先修正" in r.stderr
 
 
-# ───────────── review ─────────────
+# ───────────── maintenance ─────────────
 
-def test_review_requires_deck(topic):
-    r = run(topic, "next", ok=False)
-    assert "还没有 Learn::Golang" in r.stderr
-
-
-def test_review_flow_records_rating(topic):
+def test_counts(topic):
     run(topic, "sync", "--apply")
     assert "[Learn::Golang] new 4 · learning 0 · review 0" in run(topic, "counts").stdout
-    (cid,) = make_due("Golang/C3/index-is-byte")
-    r = run(topic, "next")
-    assert "Golang/C3/index-is-byte · new" in r.stdout
-    assert "Golang · string, rune, byte, UTF-8 · string 是一串 byte" in r.stdout
-    assert '`s := "Go!"`' in r.stdout
-    assert "71" not in r.stdout
-    assert run(topic, "next").stdout == r.stdout  # 没评分时还是同一张
-    assert "还没有 reveal" in run(topic, "answer", "3", ok=False).stderr
-    r = run(topic, "reveal")
-    assert "`71`。" in r.stdout
-    assert "1 Again · " in r.stdout and "4 Easy · " in r.stdout
-    assert "⁨" not in r.stdout
-    r = run(topic, "answer", "2")
-    assert "已记下 Hard。" in r.stdout
-    with Col() as col:
-        assert revlog(col, cid) == [2]  # 评分立即写入
-    # 没有别的卡片时，learn-ahead 让刚评 Hard 的卡片马上回来，和 Anki 一样
-    assert "Golang/C3/index-is-byte · learning" in r.stdout
-    r = run(topic, "done")
-    assert "本次复习 1 张：Again 0 · Hard 1 · Good 0 · Easy 0" in r.stdout
-    with Col() as col:
-        assert revlog(col, cid) == [2]
-    assert not (topic.parent / "data" / "session.json").exists()
 
 
-def test_cloze_review_shows_one_deletion(topic):
+def test_flag_suspend_unsuspend(topic):
     run(topic, "sync", "--apply")
-    cids = make_due("Golang/C3/rune-is-type")
-    r = run(topic, "next")
-    assert "Golang/C3/rune-is-type c1 · new" in r.stdout
-    assert "rune 是表示一个 [...] 的 type，是 int32 的 alias。" in r.stdout
-    r = run(topic, "reveal")
-    assert "[code point]" in r.stdout and "UTF-32 是 encoding" in r.stdout
-    r = run(topic, "answer", "4")
-    assert "Golang/C3/rune-is-type c2" in r.stdout
-    assert "[一个整数 type]" in r.stdout
-    run(topic, "reveal")
-    run(topic, "answer", "1")
-    run(topic, "done")
-    with Col() as col:
-        assert [revlog(col, c) for c in cids] == [[4], [1]]
-
-
-def test_undo_across_processes(topic):
-    run(topic, "sync", "--apply")
-    (cid,) = make_due("Golang/C3/index-is-byte")
-    run(topic, "next")
-    run(topic, "reveal")
-    run(topic, "answer", "1")
-    r = run(topic, "undo")
-    assert "已撤销 Again，重新显示这张卡片。" in r.stdout
-    assert "Golang/C3/index-is-byte · new" in r.stdout
-    with Col() as col:
-        assert revlog(col, cid) == []
-        card = col.get_card(cid)
-        assert (card.queue, card.reps, card.memory_state is None) == (0, 0, True)
-    assert "没有可以撤销的评分" in run(topic, "undo", ok=False).stderr
-    assert "还没有 reveal" in run(topic, "answer", "3", ok=False).stderr
-    run(topic, "reveal")
-    run(topic, "answer", "4")
-    r = run(topic, "done")
-    assert "本次复习 1 张：Again 0 · Hard 0 · Good 0 · Easy 1" in r.stdout
-    with Col() as col:
-        assert revlog(col, cid) == [4]
-
-
-def test_undo_keeps_flag_and_stops_after_suspend(topic):
-    run(topic, "sync", "--apply")
-    (cid,) = make_due("Golang/C3/index-is-byte")
-    run(topic, "next")
-    run(topic, "reveal")
-    run(topic, "answer", "3")
-    run(topic, "flag", "2", "C3/index-is-byte")
-    run(topic, "undo")
-    with Col() as col:
-        assert col.get_card(cid).user_flag() == 2
-    run(topic, "reveal")
-    run(topic, "answer", "3")
-    run(topic, "suspend", "C3/index-is-byte")
-    assert "没有可以撤销的评分" in run(topic, "undo", ok=False).stderr
-    run(topic, "done")
-    with Col() as col:
-        assert revlog(col, cid) == [3]
-        assert col.get_card(cid).queue == -1
-
-
-def test_flag_bury_unsuspend(topic):
-    run(topic, "sync", "--apply")
-    make_due("Golang/C3/index-is-byte")
-    run(topic, "next")
-    assert "已设 flag 1：1 张卡片。" in run(topic, "flag", "1").stdout
+    assert "已设 flag 1：Golang/C3/index-is-byte（1 张卡片）。" in run(topic, "flag", "1", "C3/index-is-byte").stdout
     assert "Golang/C3/index-is-byte" in run(topic, "flagged").stdout
-    r = run(topic, "bury")
-    assert "已 bury 1 张卡片" in r.stdout
-    assert "现在没有到期的卡片" in r.stdout
-    r = run(topic, "done")
-    assert "flagged 1 张" in r.stdout
+    assert "已 suspend Golang/C3/rune-is-type（2 张卡片）" in run(topic, "suspend", "C3/rune-is-type").stdout
+    with Col() as col:
+        assert all(c.queue == -1 for c in cards_of(col, "Golang/C3/rune-is-type"))
     run(topic, "flag", "0", "C3/index-is-byte")
     assert "没有 flagged" in run(topic, "flagged").stdout
     run(topic, "unsuspend", "C3/rune-is-type")
     with Col() as col:
         assert all(c.queue == 0 for c in cards_of(col, "Golang/C3/rune-is-type"))
+    assert "flag 是 0" in run(topic, "flag", "8", "C3/index-is-byte", ok=False).stderr
 
 
 def test_leech_after_eight_lapses(topic):
     from anki.scheduler.v3 import CardAnswer
     run(topic, "sync", "--apply")
     (cid,) = make_due("Golang/C3/index-is-byte")
-
-    def rate(col, rating):
-        card = col.get_card(cid)
-        card.start_timer()
-        states = col._backend.get_scheduling_states(cid)
-        col.sched.answer_card(col.sched.build_answer(card=card, states=states, rating=rating))
-
     with Col() as col:
-        rate(col, CardAnswer.EASY)  # new → review
-        for _ in range(7):
+        rate(col, cid, CardAnswer.EASY)  # new → review
+        for _ in range(8):
             col.sched.set_due_date([cid], "0")
-            rate(col, CardAnswer.AGAIN)
-        col.sched.set_due_date([cid], "0")
-        assert col.get_card(cid).lapses == 7
-    run(topic, "next")
-    run(topic, "reveal")
-    assert "成为 leech" in run(topic, "answer", "1").stdout
-    run(topic, "undo")  # 撤销会去掉 leech tag
-    with Col() as col:
-        card = col.get_card(cid)
-        assert card.lapses == 7 and "leech" not in card.note().tags
-    run(topic, "reveal")
-    assert "成为 leech" in run(topic, "answer", "1").stdout
-    r = run(topic, "done")
-    assert "需要维护：leech 1 张" in r.stdout
+            rate(col, cid, CardAnswer.AGAIN)
+        assert "leech" in col.get_card(cid).note().tags
     assert "Golang/C3/index-is-byte  " in run(topic, "leeches").stdout
     r = run(topic, "card", "C3/index-is-byte")
     assert "lapses 8" in r.stdout and "leech" in r.stdout

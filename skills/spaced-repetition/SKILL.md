@@ -1,28 +1,29 @@
 ---
 name: spaced-repetition
-description: Keeps learned material alive with spaced repetition on Anki's collection format and FSRS scheduler, run headless through the official `anki` Python package — the Anki desktop app, AnkiConnect and AnkiWeb are not used. Knowledge is written as small atoms (one fact per card, basic or cloze) in YAML files kept in git; a bundled script syncs them into a local collection, serves due cards one at a time, and records the learner's Again/Hard/Good/Easy ratings. Use when the learner asks to review, asks what is due, wants cards made from a mastered lesson, or wants to fix a card they keep failing (复习、间隔重复、记忆卡片、到期), in a directory with topic.yaml or the workspace above it.
+description: Keeps learned material alive with spaced repetition on Anki's collection format and FSRS scheduler. Knowledge is written as small atoms (one fact per card, basic or cloze) in YAML files kept in git; a bundled script (official `anki` Python package, no AnkiConnect or AnkiWeb) syncs them into a local collection that the learner reviews in the Anki desktop app. Use when the learner wants cards made from a mastered lesson, asks what is due, or wants to fix cards they flagged in Anki or keep failing (复习、间隔重复、记忆卡片、到期、flag、leech), in a directory with topic.yaml or the workspace above it.
 ---
 
 # Spaced Repetition
 
-Lessons make knowledge; review keeps it. This skill handles the second part, and lets Anki's scheduler decide **when** each piece of knowledge comes back.
+Lessons make knowledge; review keeps it. This skill handles the second part, and lets Anki's scheduler decide **when** each piece of knowledge comes back. The learner reviews in the Anki desktop app; the agent writes the atoms, syncs them into the collection, and fixes the cards the learner flags.
 
 Three ideas carry it:
 
 - **The unit is an atom, not a lesson.** An atom is one fact the learner can recall in a few seconds: "`len(s)` counts bytes", not "the string lesson". Failing one atom reschedules only that atom.
-- **The scheduler decides, not the agent.** Due dates, intervals, lapses and leeches come from Anki's FSRS scheduler and the review log. The agent never picks which cards to review, never skips a card, and never tells the learner a card is "probably fine".
-- **Review is not a lesson.** The learner recalls, sees the answer, rates themself. The agent doesn't grade, explain, hint or add questions during review. If a card exposes a real gap, that goes back to the lesson side (see "Maintenance").
+- **The scheduler decides, not the agent.** Due dates, intervals, lapses and leeches come from Anki's FSRS scheduler and the review log. The agent never changes a card's schedule, never tells the learner a card is "probably fine", and doesn't suggest reviewing in place of the lesson the learner chose.
+- **The YAML is the source, Anki is the player.** Card content lives in the topic's YAML; the collection is generated from it. Edits made to a card inside Anki are overwritten by the next `sync`, so every content fix goes into the YAML.
 
 ## Where things live
 
 | What | Where | In git? |
 |---|---|---|
 | Atom text (the source of truth for card content) | `<topic>/srs/<node ID>.yaml` | yes |
-| Collection: notes, cards, schedule, review log | `$LEARN_SRS_COLLECTION`, default `~/.local/share/learn-srs/collection.anki2` | **never** |
-| Review session state (current card, last rating for undo) | `session.json` next to the collection | no |
+| Collection: notes, cards, schedule, review log | `$LEARN_SRS_COLLECTION` (the workspace's mise env sets it), default `~/.local/share/learn-srs/collection.anki2` | **never** |
 | Backups | `backups/` next to the collection | no |
 
-One collection for all topics; one deck per topic, `Learn::<topic directory name>`. Card *content* changes only by editing YAML and running `sync`; card *schedule* changes only through review commands. Never edit the collection with any other tool.
+One collection for all topics; one deck per topic, `Learn::<topic directory name>`. Card *content* changes only by editing YAML and running `sync`; card *schedule* changes only by reviewing in Anki (plus `flag` / `suspend`). Never edit the collection with any other tool.
+
+**Close Anki first.** The Anki desktop app must not have the collection open while `srs.py` writes to it (`sync --apply`, `flag`, `suspend`, `unsuspend`). Ask the learner to quit Anki before these, and to reopen it afterwards.
 
 ## The script
 
@@ -37,15 +38,10 @@ uv run <skill-dir>/scripts/srs.py <command>
 | `check` | Lint the atom files. Exit 1 on errors. |
 | `sync [--apply] [--delete]` | Show what would change in the collection; `--apply` writes it (backup first). |
 | `counts` | New / learning / review cards due now, per deck. |
-| `next` | Show the current card's front (the same card again if nothing was rated since). |
-| `reveal` | Show the back and the interval each rating would give. |
-| `answer 1\|2\|3\|4` | Rate the shown card (Again/Hard/Good/Easy) and show the next front. |
-| `undo` | Take back the last rating and show that card again. One step only, within the session, and not after that card was buried or suspended. |
-| `done` | Save, back up, print the session summary. |
-| `flag N` / `bury` / `suspend` | Act on the shown card (flag 1–7, 0 clears). |
-| `unsuspend ATOM` | Bring a suspended atom back. |
-| `leeches` / `flagged` | List cards that need maintenance. |
+| `flagged` / `leeches` | List cards that need maintenance. |
 | `card ATOM` | An atom's text, schedule and review history. |
+| `flag N ATOM` | Set flag 1–7 on the atom's cards; 0 clears. |
+| `suspend ATOM` / `unsuspend ATOM` | Keep an atom out of review / bring it back. |
 | `stats` | Cards by state, reviews and retention. |
 | `backup` | Make a backup now. |
 
@@ -80,41 +76,32 @@ An atom is either `front` + `back` (basic) or `cloze` (+ optional `extra`). Text
 
 **Removing.** Deleting an atom from YAML, or retiring its node, makes `sync --apply` suspend its cards and tag them `retired`; history stays. `--delete` removes them for good; use it only when the learner asks.
 
-## Reviewing
+## Fixing flagged cards
 
-Only when the learner asks. Don't run `counts` or start a review on your own initiative, and don't suggest reviewing in place of the lesson the learner chose; the learner may ask "what's due?", and then you run `counts`.
+While reviewing in Anki, the learner flags cards they think are badly written. When they come back to fix them (or `leeches` lists cards failed 8 times, which Anki tags `leech`), go through them **with the learner**, one at a time:
 
 ```
-Review loop:
-- [ ] srs.py next — show the front exactly as printed; the learner thinks of the answer
-- [ ] learner says they have an answer (or gives up) → srs.py reveal, show the back
-- [ ] AskUserQuestion: Again / Hard / Good / Easy, each label with its interval
-- [ ] srs.py answer N — prints the next front; repeat
-- [ ] queue empty, or the learner stops → srs.py done
+Fix loop:
+- [ ] srs.py flagged (and leeches) — list what needs fixing
+- [ ] for each card: srs.py card ATOM, and print its full front and back in the reply
+- [ ] the learner decides: keep, rewrite, split, delete, or record a gap
+- [ ] edit srs/<node>.yaml, never the card in Anki
+- [ ] after all cards: quit Anki → check → sync → sync --apply (--delete if anything was deleted) → flag 0 on kept or rewritten atoms
+- [ ] commit the YAML
 ```
 
-- **Show the card, nothing else.** Relay the front and back as the script prints them. Don't rephrase, add hints, or comment on the learner's answer. The learner doesn't need to type an answer; thinking it is enough.
-- **The rating question.** One AskUserQuestion per card, header "Rating", four options in order Again, Hard, Good, Easy, each label carrying the interval `reveal` printed (e.g. "Good · 3d") and a one-line meaning: Again = forgot or wrong; Hard = recalled with real effort; Good = recalled; Easy = instant. Never recommend one. The learner's own judgement is the data FSRS learns from.
-- **"Other" replies.** The learner may type instead of picking:
-  - *flag* / *this card is bad* → `flag 1` (with their reason in one line, which you note for maintenance), then ask the rating again.
-  - *undo* / *I misclicked* → `undo`, which shows that card again; continue from reveal.
-  - *why?* / *I don't get it* → don't explain here. Note the atom; after `done`, offer to revisit its node. Ask for the rating (usually Again).
-  - *stop* → `done`.
-- **Once the queue is empty**, `next` says so; run `done`. Never pull cards ahead of schedule. A card rated Again may come back within minutes; that is the scheduler's choice.
-
-## Maintenance
-
-After `done`, if the session left flagged cards, or `leeches` lists any (a leech is a card failed 8 times; Anki tags it `leech`), fix them **with the learner**, one at a time:
-
-- **Badly written atom** (ambiguous, two facts, answer not recallable from the front): rewrite or split it in YAML. Splitting means new ids for the parts; the old id is removed.
-- **Real gap in understanding**: the atom is fine, the knowledge isn't. Record it in the topic's `debts.md` and `suspend` the card until the node is retaught. With topic-graph, the learner may choose to set the node back (`graph.py set ID taught`).
-- Then `flag 0` on the atom (or `sync --apply` after a rewrite) so it stops showing up.
+- **Show the card itself.** The learner can't see the card from the atom id. Before discussing a card, print its front and back (cloze: the text with its blanks, and `extra`) in the reply, and do the same for the rewritten version before applying it.
+- **Badly written atom** (ambiguous, two facts, answer not recallable from the front): rewrite it in YAML. A wording fix keeps the id and the schedule; if the question now asks a different fact, or the atom changes between basic and cloze, use a new id. Splitting means new ids for the parts; the old id is removed.
+- **Delete.** When the learner says to delete a card, they mean the atom: remove it from the YAML and run `sync --apply --delete`. Without `--delete` it would only be retired.
+- **Real gap in understanding**: the atom is fine, the knowledge isn't. Record it in the topic's `debts.md` and `suspend ATOM` until the node is retaught. With topic-graph, the learner may choose to set the node back (`graph.py set ID taught`).
+- **Clear the flag** with `flag 0 ATOM` on every atom that stays, so it leaves the `flagged` list. Atoms removed from the YAML don't need it.
 
 Never delete a card's history to make the numbers look better.
 
 ## Checklist for every change
 
 ```
+- [ ] Anki desktop is closed while srs.py writes
 - [ ] srs.py check passes
 - [ ] srs.py sync shows only the changes you intended; then sync --apply
 - [ ] the YAML is committed; the collection is not

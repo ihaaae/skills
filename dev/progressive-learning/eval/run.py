@@ -45,6 +45,7 @@ DEV = HERE.parent                                 # dev/progressive-learning
 REPO = DEV.parent.parent                          # 仓库根
 SKILL = REPO / "skills" / "progressive-learning" / "SKILL.md"
 TOPIC_GRAPH_SKILL = REPO / "skills" / "topic-graph" / "SKILL.md"
+WRITING_SKILL = REPO / "skills" / "writing-for-learners" / "SKILL.md"   # progressive-learning 让 agent 写文档前读它
 GRAPH_PY = REPO / "skills" / "topic-graph" / "scripts" / "graph.py"
 CHECK_TOPIC_PY = SKILL.parent / "scripts" / "check_topic.py"
 CASES_DIR = DEV / "cases"
@@ -300,6 +301,7 @@ def system_prompt(case: dict, condition: str) -> str:
     parts.append("# topic-graph skill\n\n" + skill_text(TOPIC_GRAPH_SKILL, TOPIC_GRAPH_REFERENCES))
     if skill_file:
         parts.append("# progressive-learning skill\n\n" + skill_text(skill_file))
+        parts.append("# writing-for-learners skill\n\n" + WRITING_SKILL.read_text())
     return "\n\n---\n\n".join(parts)
 
 

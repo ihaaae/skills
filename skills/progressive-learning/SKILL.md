@@ -1,9 +1,16 @@
 ---
 name: progressive-learning
-description: "把一个约 25 分钟能学完的知识点写成 topic 文档，再按文档带学习者逐层学完。"
+description: "把一个约 25 分钟能学完的知识点写成分层的 topic 文档（progressive disclosure：前置都学过才教；复杂的知识先学容易的部分），再由脚本维持上课的 routine，按文档带学习者逐层学完。"
 ---
 
 # Progressive Learning
+
+这个技能做两件事：
+
+- **Progressive disclosure**：和 topic-graph 排节点的原则相同，前置知识都学过了才教一个知识点；复杂的知识先学容易的部分，再一层层加因素、换场景。第一步的分层计划和第二步的文档结构都为这一条服务。
+- **上课的 routine**：讲解、作答、判题、补充、记进度的顺序由 `lesson.py` 维持，你只写它交给你的内容（第三步）。
+
+文字本身怎么写（措辞、术语、例子）不在这里，见 writing-for-learners skill。
 
 ## 流程
 
@@ -12,7 +19,7 @@ description: "把一个约 25 分钟能学完的知识点写成 topic 文档，�
 ```
 进度：
 - [ ] 第一步：判断大小和前置，写分层计划并按清单自查；不通过才停下来问学习者
-- [ ] 第二步：读 modules.md 和 questions.md，按计划写 topic 文档
+- [ ] 第二步：读 modules.md、questions.md 和 writing-for-learners skill，按计划写 topic 文档
 - [ ] 第二步：check_topic.py 直到打印"通过"，再自查内容
 - [ ] 第三步：用 lesson.py 按文档上课
 - [ ] 课后：把补充例子和补充问题写进文档的"## 课上补充"
@@ -65,7 +72,7 @@ description: "把一个约 25 分钟能学完的知识点写成 topic 文档，�
 
 ## 第二步：写 topic 文档
 
-先把整节课写成文档，再开始上课。
+先把整节课写成文档，再开始上课。文档里的每一句话（知识、例子、题干、选项、解析）都按 writing-for-learners skill 写，写完按它的清单自查；上课时的讲解和问题解答也一样。
 
 文档必须照下面的结构写：标题的文字、编号方式和顺序都不能改，只有尖括号里的内容和标了"可省略"的模块由你决定。
 

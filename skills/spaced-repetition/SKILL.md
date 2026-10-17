@@ -49,28 +49,12 @@ uv run <skill-dir>/scripts/srs.py <command>
 
 ## Writing atoms
 
-After a node is mastered (with topic-graph: after `graph.py set … mastered`), draft its atoms. Read [references/writing-atoms.md](references/writing-atoms.md) first; every atom must pass it.
+After a node is mastered (with topic-graph: after `graph.py set … mastered`), draft its atoms. How to write a good atom, and the YAML format, is the **writing-anki-cards** skill; read it (and writing-for-learners, which it points to) first. Every atom must pass its checks.
 
 1. Draft `srs/<node ID>.yaml` from what was **actually taught**: the node body's claims, examples and the learner's mistakes. Nothing from the source that the lesson skipped.
 2. Show the drafts to the learner as front/back pairs. The learner approves, edits or drops each one. Only approved atoms stay in the file.
 3. `srs.py check`, fix until clean; `srs.py sync` to show the plan, then `sync --apply`.
 4. Commit the YAML with the lesson's other files.
-
-```yaml
-node: C3
-atoms:
-  - id: index-is-byte          # [a-z0-9-]+, unique in the file, never reused
-    section: string 是一串 byte（ASCII）   # optional: the part of the node it comes from
-    front: |
-      `s := "Go!"`，`fmt.Println(s[0])` 打印什么？
-    back: |
-      `71`。`s[i]` 是第 i 个 byte，一个 `uint8` 数字。
-  - id: len-counts-bytes
-    cloze: "`len(s)` 返回 s 里 {{c1::byte}} 的个数。"
-    extra: "按 code point 数用 `utf8.RuneCountInString(s)`。"   # optional, shown with the answer
-```
-
-An atom is either `front` + `back` (basic) or `cloze` (+ optional `extra`). Text is Markdown. The card shows a context line "topic · node title · section" above the front, so the front needn't repeat it.
 
 **Identity.** The atom id is the card's identity. Editing an atom's text keeps its schedule; that is right for fixing wording, not for asking a different question. If the fact being asked changes, give it a new id (the old one is retired and its history kept). Changing an atom between basic and cloze also needs a new id.
 
@@ -86,12 +70,13 @@ Fix loop:
 - [ ] for each card: srs.py card ATOM, and print its full front and back in the reply
 - [ ] the learner decides: keep, rewrite, split, delete, or record a gap
 - [ ] edit srs/<node>.yaml, never the card in Anki
+- [ ] if the fix shows a pattern the twenty rules don't name, add a line to writing-anki-cards' "Learned from review" (a PR to ihaaae/skills)
 - [ ] after all cards: quit Anki → check → sync → sync --apply (--delete if anything was deleted) → flag 0 on kept or rewritten atoms
 - [ ] commit the YAML
 ```
 
 - **Show the card itself.** The learner can't see the card from the atom id. Before discussing a card, print its front and back (cloze: the text with its blanks, and `extra`) in the reply, and do the same for the rewritten version before applying it.
-- **Badly written atom** (ambiguous, two facts, answer not recallable from the front): rewrite it in YAML. A wording fix keeps the id and the schedule; if the question now asks a different fact, or the atom changes between basic and cloze, use a new id. Splitting means new ids for the parts; the old id is removed.
+- **Badly written atom** (ambiguous, two facts, answer not recallable from the front): rewrite it in YAML, following writing-anki-cards. A wording fix keeps the id and the schedule; if the question now asks a different fact, or the atom changes between basic and cloze, use a new id. Splitting means new ids for the parts; the old id is removed.
 - **Delete.** When the learner says to delete a card, they mean the atom: remove it from the YAML and run `sync --apply --delete`. Without `--delete` it would only be retired.
 - **Real gap in understanding**: the atom is fine, the knowledge isn't. Record it in the topic's `debts.md` and `suspend ATOM` until the node is retaught. With topic-graph, the learner may choose to set the node back (`graph.py set ID taught`).
 - **Clear the flag** with `flag 0 ATOM` on every atom that stays, so it leaves the `flagged` list. Atoms removed from the YAML don't need it.

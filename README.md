@@ -36,10 +36,12 @@ npx skills remove ihaaae/skills -g
 | [formatting-latex](skills/formatting-latex) | Compile, lint, and reformat LaTeX sources |
 | [porting-anki-to-yanki](skills/porting-anki-to-yanki) | Convert Anki plain-text exports into yanki Markdown notes |
 | [progressive-learning](skills/progressive-learning) | 把一个 25 分钟的知识点写成 topic 文档（分层示例 + 同构练习），再按文档逐轮教会 |
-| [spaced-repetition](skills/spaced-repetition) | 把学过的知识写成 atom，用 Anki 的 collection 格式和 FSRS 调度做间隔重复；复习在 Anki 桌面版里做，卡片从 YAML 源头修改 |
+| [spaced-repetition](skills/spaced-repetition) | 把学过的知识点映射成 Anki 卡片：atom 写在 YAML 里，同步进 collection，用 FSRS 调度；复习在 Anki 桌面版里做，被 flag 的卡片回到 YAML 修改 |
 | [syncing-notes-to-anki](skills/syncing-notes-to-anki) | Author Markdown flashcards and sync them to Anki via yanki |
 | [topic-graph](skills/topic-graph) | Plan and track learning a subject as a prerequisite graph of small nodes |
 | [using-nowledge-mem](skills/using-nowledge-mem) | Use Nowledge Mem via remote MCP |
+| [writing-anki-cards](skills/writing-anki-cards) | 怎么写好一张记忆卡片（atom）：以 Wozniak 的 [Twenty rules of formulating knowledge](https://www.supermemo.com/en/blog/twenty-rules-of-formulating-knowledge) 为方法，复习中学到的细节逐步补进来 |
+| [writing-for-learners](skills/writing-for-learners) | 给学习者看的文字怎么写：一个东西一个词、措辞和事实一样宽、不造词、例子自包含、简洁不等于压缩；课文和卡片共用 |
 
 ## Layout
 

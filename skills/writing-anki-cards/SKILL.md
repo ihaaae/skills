@@ -84,6 +84,9 @@ Add a line here when fixing a flagged card shows a pattern the twenty rules don'
       `a\nb`（一行）。
   ```
 
+- A front over 200 characters is always rewritten, not just "considered" for splitting: a long snippet takes longer to read than to recall, and the fact gets lost in it. Write declarations on one line (`type S struct{ a, b int }`, `type I interface{ M() T }`), drop the `func main()` wrapper, and cut fields, types and branches the question doesn't need. When a helper's body is irrelevant, a one-line comment saying what it does may stand in for it. If it still doesn't fit, split it into two atoms.
+- A flagged card often means the node is the problem: it teaches error-message wording, benchmark numbers, internal implementation, old-toolchain behavior or style advice, and atoms written from it inherit that. Fix the node too (cut the detail, or move it to an extension marked "not tested"), or the next batch of atoms repeats the mistake.
+
 ## Checks before showing drafts to the learner
 
 ```
@@ -94,7 +97,7 @@ Add a line here when fixing a flagged card shows a pattern the twenty rules don'
 - [ ] the writing-for-learners checklist passes, and the learner's preferences in context are followed
 - [ ] every line in "Learned from review" is followed (`srs.py check` warns about node IDs)
 - [ ] confusable pairs have cards that force the distinction
-- [ ] front ≲ 200 characters, back ≲ 300 (srs.py check warns past that)
+- [ ] front ≤ 200 characters (rewrite past that), back ≲ 300 (srs.py check warns past both)
 ```
 
 ## Example: atoms from a string/rune/byte/UTF-8 lesson

@@ -18,7 +18,7 @@ Three ideas carry it:
 | What | Where | In git? |
 |---|---|---|
 | Atom text (the source of truth for card content) | `<topic>/srs/<node ID>.yaml` | yes |
-| Collection: notes, cards, schedule, review log | `$LEARN_SRS_COLLECTION` (the workspace's mise env sets it), default `~/.local/share/learn-srs/collection.anki2` | **never** |
+| Collection: notes, cards, schedule, review log | `$LEARN_SRS_COLLECTION` (the workspace's mise env sets it; required, no default). Query the collection only through this path | **never** |
 | Backups | `backups/` next to the collection | no |
 
 One collection for all topics; one deck per topic, `Learn::<topic directory name>`. Card *content* changes only by editing YAML and running `sync`; card *schedule* changes only by reviewing in Anki (plus `flag` / `suspend`). Never edit the collection with any other tool.

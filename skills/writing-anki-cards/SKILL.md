@@ -84,10 +84,13 @@ Add a line here when fixing a flagged card shows a pattern the twenty rules don'
       `a\nb`（一行）。
   ```
 
+- The back answers only what the front asks. Don't bring in a contrast the front didn't ask about ("array 能用 `==`；换成 slice 就不能编译" on a card that only shows arrays): it is a second fact the learner never tried to recall. If the contrast is worth keeping, give it its own atom.
+
 ## Checks before showing drafts to the learner
 
 ```
 - [ ] each atom asks one thing; the back is one fact (plus at most one line of why, except on an application atom)
+- [ ] the back mentions nothing the front didn't ask about
 - [ ] no card tests both a concept and its application
 - [ ] the answer can be checked against the back without help
 - [ ] every fact used was taught in this node or an earlier mastered one

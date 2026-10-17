@@ -86,11 +86,14 @@ Add a line here when fixing a flagged card shows a pattern the twenty rules don'
 
 - The back answers only what the front asks. Don't bring in a contrast the front didn't ask about ("array 能用 `==`；换成 slice 就不能编译" on a card that only shows arrays): it is a second fact the learner never tried to recall. If the contrast is worth keeping, give it its own atom.
 
+- The back gives the answer in the front's own terms. Don't show the arithmetic behind it with symbols the front never used (`cap = c - a = 2` on a card about `p[:2:2]`): the learner has to decode the notation before checking the answer. Say it with the card's own values ("`q` 的 cap 是 2"). The node follows the same rule, or the next draft brings the notation back.
+
 ## Checks before showing drafts to the learner
 
 ```
 - [ ] each atom asks one thing; the back is one fact (plus at most one line of why, except on an application atom)
 - [ ] the back mentions nothing the front didn't ask about
+- [ ] no formula or symbol on the back that the front didn't use
 - [ ] no card tests both a concept and its application
 - [ ] the answer can be checked against the back without help
 - [ ] every fact used was taught in this node or an earlier mastered one

@@ -6,7 +6,7 @@
 """spaced-repetition: 用 Anki 的 collection 格式和 FSRS 调度做间隔重复；复习在 Anki 桌面版里做。
 
 卡片内容的来源是专题里的 srs/<节点ID>.yaml（进 git）；调度和复习记录在本地 collection 里（不进 git）。
-collection 路径：$LEARN_SRS_COLLECTION，默认 ~/.local/share/learn-srs/collection.anki2；backups/ 放在它旁边。
+collection 路径：$LEARN_SRS_COLLECTION（必须设置，通常指向 Anki profile 里的 collection.anki2）；backups/ 放在它旁边。
 本脚本写 collection 时，Anki 桌面版不能打开它。
 
 用法（在专题目录内运行，或用 --root 指定；在含多个专题的工作区根目录运行则覆盖全部专题）：
@@ -280,7 +280,10 @@ def guid_for(atom_id: str) -> str:
 # ───────────────────────── collection ─────────────────────────
 
 def collection_path() -> Path:
-    p = os.environ.get("LEARN_SRS_COLLECTION") or "~/.local/share/learn-srs/collection.anki2"
+    p = os.environ.get("LEARN_SRS_COLLECTION")
+    if not p:
+        # 没有默认路径：默认路径会悄悄新建一个空 collection，看起来像卡全丢了
+        sys.exit("srs.py: LEARN_SRS_COLLECTION 未设置（应指向 Anki profile 的 collection.anki2）")
     return Path(p).expanduser()
 
 

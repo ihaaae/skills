@@ -23,7 +23,7 @@ atoms:
     front: |
       `s := "Go!"`，`fmt.Println(s[0])` 打印什么？
     back: |
-      `71`。`s[i]` 是第 i 个 byte，一个 `uint8` 数字。
+      `71`。
   - id: len-counts-bytes
     cloze: "`len(s)` 返回 s 里 {{c1::byte}} 的个数。"
     extra: "按 code point 数用 `utf8.RuneCountInString(s)`。"   # optional, shown with the answer
@@ -61,11 +61,34 @@ atoms:
 Add a line here when fixing a flagged card shows a pattern the twenty rules don't already name (what went wrong, and the rule that prevents it).
 
 - An atom names another node by its title, never its ID: the learner doesn't remember what IDs stand for.
+- One card must not test both a concept and its application; write them as two atoms. A code-output card whose back also explains the rule mixes the two, and the learner can't tell which part they recalled. The **concept atom** asks the rule directly; the **application atom** asks what a snippet does, and its back gives the answer only, without restating the rule.
+
+  ```yaml
+  # Before: one card, the back explains the rule
+  - id: raw-string-output
+    front: |
+      `` fmt.Println(`a\nb`) `` 打印什么？
+    back: |
+      `a\nb`（一行）。backquote 表示的 raw string 不解释 escape。
+
+  # After: two atoms
+  - id: raw-string-no-escape
+    front: |
+      backquote 表示的 raw string 会解释 escape 吗？
+    back: |
+      不会。
+  - id: raw-string-output
+    front: |
+      `` fmt.Println(`a\nb`) `` 打印什么？
+    back: |
+      `a\nb`（一行）。
+  ```
 
 ## Checks before showing drafts to the learner
 
 ```
-- [ ] each atom asks one thing; the back is one fact (plus at most one line of why)
+- [ ] each atom asks one thing; the back is one fact (plus at most one line of why, except on an application atom)
+- [ ] no card tests both a concept and its application
 - [ ] the answer can be checked against the back without help
 - [ ] every fact used was taught in this node or an earlier mastered one
 - [ ] the writing-for-learners checklist passes, and the learner's preferences in context are followed
@@ -84,7 +107,7 @@ atoms:
     front: |
       `s := "Go!"`，`fmt.Println(s[0])` 打印什么？
     back: |
-      `71`。`s[i]` 是第 i 个 byte，一个 `uint8` 数字。
+      `71`。
   - id: len-counts-bytes
     section: string 是一串 byte（ASCII）
     cloze: "`len(s)` 返回 s 里 {{c1::byte}} 的个数。"

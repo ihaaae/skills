@@ -545,8 +545,10 @@ local clean = {
   end,
 }
 
--- pass 3: drop whatever raw HTML and empty paragraphs are left
+-- pass 3: drop whatever raw HTML and empty paragraphs and headings are left
 local strip = {
+  -- Google Docs page breaks are empty headings
+  Header = function(el) if not stringify(el):match("%S") then return {} end end,
   RawBlock = function(el) if el.format == "html" then return {} end end,
   RawInline = function(el) if el.format == "html" then return {} end end,
   Para = function(el) if #el.content == 0 then return {} end end,
@@ -774,6 +776,94 @@ def listing_tables(text, margins):
     return re.sub(r"<table\b.*?</table>", convert, text, flags=re.S)
 
 
+MONO_FONT = re.compile(r"font-family\s*:[^;}]*(?:mono|courier|consolas|menlo|monaco|inconsolata)", re.I)
+SPAN = re.compile(r"<span\b([^>]*)>([^<]*)</span>")
+PARA = re.compile(r"<p\b[^>]*>(.*?)</p>", re.S)
+GDOCS_SPAN = re.compile(r"""<span\s+class=["'](?:c|calibre)\d+(?:\s+(?:c|calibre)\d+)*["']\s*>""")
+
+def gdocs_spans(inner):
+    """True when every span has only Google Docs classes and all the text is
+    inside spans (links may sit inside a span)."""
+    depth, spans = 0, 0
+    for tok in re.split(r"(<[^>]+>)", inner):
+        if tok.startswith("<span"):
+            if not GDOCS_SPAN.fullmatch(tok):
+                return False
+            depth += 1; spans += 1
+        elif tok == "</span>":
+            depth -= 1
+        elif not tok.startswith("<") and tok.strip() and depth <= 0:
+            return False
+    return spans > 1
+
+
+def css_monospace(z):
+    """Classes whose font is monospace, from the book's stylesheets: only rules
+    whose selectors are all plain classes (`.c32`, `span.c32`, `.a, .b`)."""
+    out = set()
+    for name in z.namelist():
+        if name.lower().endswith(".css"):
+            css = z.read(name).decode("utf8", "replace")
+            for sel, body in re.findall(r"([^{}]+)\{([^}]*)\}", css):
+                parts = [re.fullmatch(r"\s*[\w-]*\.([\w-]+)\s*", x) for x in sel.split(",")]
+                if MONO_FONT.search(body) and all(parts):
+                    out.update(m.group(1) for m in parts)
+    return out
+
+
+def monospace_code(text, mono):
+    """Google Docs exports (via calibre) have no <pre>, <code> or <tt>: code is
+    plain <p>/<span> whose class sets a monospace font, one <p> per line. A run of
+    paragraphs whose text is all in such spans becomes one <pre>; such a span in
+    running text becomes <code>. Returns the new text, the number of <pre>, and
+    the characters of text in code lines and in all paragraphs."""
+    def is_mono(attrs):
+        m = re.search(r"\bclass=[\"']([^\"']*)[\"']", attrs)
+        return bool(m and mono & set(m.group(1).split()))
+
+    def code_line(inner):
+        """The line of code a paragraph holds, or None: every tag in it is a
+        <span> without nested tags, and every span with text is monospace."""
+        if SPAN.sub("", inner).strip():
+            return None
+        spans = SPAN.findall(inner)
+        if not any(t.strip() for _, t in spans) or any(t.strip() and not is_mono(a) for a, t in spans):
+            return None
+        return "".join(t for _, t in spans)
+
+    def prose(p, inner):
+        # calibre puts each Google Docs span (classes c0, c1, ..., some renamed
+        # calibre3) on its own line; when all the text is in such spans, the words
+        # carry their own spaces and the newlines between tags are layout
+        if gdocs_spans(inner):
+            p = re.sub(r">\s*\n\s*<", "><", p)
+        if re.search(r"<(?:code|tt|kbd|samp|pre)\b", p):
+            return p  # the book marks code itself
+        return SPAN.sub(lambda m: f"<code>{m.group(2)}</code>" if is_mono(m.group(1)) and m.group(2).strip() else m.group(0), p)
+
+    out, pos, run, count, code_chars, chars = [], 0, [], 0, 0, 0
+    def flush():
+        nonlocal count
+        if run:
+            out.append("<pre>" + "\n".join(run) + "</pre>")
+            run.clear(); count += 1
+    for m in PARA.finditer(text):
+        gap, line = text[pos:m.start()], code_line(m.group(1))
+        n = len(norm(m.group(1)))
+        chars += n
+        code_chars += n if line is not None else 0
+        if line is None or gap.strip():
+            flush(); out.append(gap)
+        if line is None:
+            out.append(prose(m.group(0), m.group(1)))
+        else:
+            run.append(line)
+        pos = m.end()
+    flush()
+    out.append(text[pos:])
+    return "".join(out), count, code_chars, chars
+
+
 NOTE_REF = re.compile(r"<sup\b[^>]*>\s*\[?\s*<a\b[^>]*\bhref=[\"'][^\"'#]*#([^\"']+)[\"']"
                       r"|<a\b[^>]*\bhref=[\"'][^\"'#]*#([^\"']+)[\"'][^>]*>\s*<sup\b")
 
@@ -796,7 +886,7 @@ def footnote_anchors(texts):
 def patch_epub(src, tmp):
     """Rewrite the spine documents before pandoc sees them; return the path of
     a patched copy (or src if nothing changed) and a few counts."""
-    stats = {"headings_from_nav": 0, "listing_tables": 0}
+    stats = {"headings_from_nav": 0, "listing_tables": 0, "code_from_css": 0}
     try:
         with zipfile.ZipFile(src) as z:
             docs = {n: z.read(n).decode("utf8", "replace") for n in z.namelist()
@@ -808,6 +898,14 @@ def patch_epub(src, tmp):
                 print(f"warning: could not use the ePub's navigation for headings: {e}", file=sys.stderr)
             footnote_anchors(texts)
             margins = css_margins(z)
+            mono = css_monospace(z)
+            if mono:
+                done = {n: monospace_code(t, mono) for n, t in texts.items() if "<pre" not in t}
+                # a book set in a monospace body font: most of its text would become code
+                if 2 * sum(x[2] for x in done.values()) < sum(x[3] for x in done.values()):
+                    for name, (text, n, _, _) in done.items():
+                        texts[name] = text
+                        stats["code_from_css"] += n
             for name, text in texts.items():
                 if "<table" in text:
                     new = listing_tables(text, margins)

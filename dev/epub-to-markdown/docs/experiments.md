@@ -172,6 +172,30 @@ root 提示符：210 个块以 `# ` 开头，其中 208 个是 root 会话（`# 
 
 SKILL.md、README、epub2md.py 文件头不再写 pandoc 的版本要求，开发规则也不再要求改动在 3.1.x 和 3.8 上都验证：哪个版本真的转坏了再写。回归只在本机装的 pandoc 上跑（现在是 3.8），golden 删掉 3.1.3 的 5 行。转换器没改，兼容旧版的分支（`canon()`、`tex_math_gfm` 检测）留着。
 
+## 9. PLAI：Google Docs 导出（第九轮，2026-10-20）
+
+Programming Languages: Application and Interpretation 3.2.5（plai.org 的 epub）由 Google Docs 导出、经 calibre 转换：没有 `<pre>` / `<code>` / `<tt>`，代码是 `<p class="c5"><span class="c32">一行代码</span></p>`，一行一个段落；行内代码是 `<span class="c23">`；两者只靠样式表里的 `font-family: "Roboto Mono", monospace` 区分。改前的输出：
+
+1. `code_blocks` 0：639 段代码变成按句断行的正文，缩进丢失。
+2. calibre 把每个 span 放在单独一行，span 之间的换行在 Markdown 里变成空格：“`Exp` s”、“features .”、“Version 3.2. 5 ,”、“across  features”。
+3. 14 个空 `<h1>`（Google Docs 的分页）变成只有 `#` 的行，也进了 toc。
+
+改动：
+
+1. 预处理 `monospace_code()`：`css_monospace()` 从样式表找出 `font-family` 是等宽字体（mono、Courier、Consolas、Menlo、Monaco、Inconsolata）的 class，只认纯 class 选择器（`.c32`、`span.c32`、`.a, .b`）。只含这些 span 的连续 `<p>` 合成一个 `<pre>`；其余段落里的等宽 span 改成 `<code>`，段落里已有 `<code>` / `<tt>` / `<kbd>` / `<samp>` / `<pre>` 的不动。
+2. 防误判：只处理没有 `<pre>` 的文件；等宽文字超过全书段落文字一半（正文用等宽字体的书）时整步跳过。按字符算，不按段落算：PLAI 一行代码一个段落，有的文件 61 段里 38 段是代码，按段落算会跳过；按字符算全书代码占 13%。
+3. 多余空格：只在段落里的 span 全是 Google Docs class（`c\d+`，calibre 改名的 `calibre\d+`）、且文字都在 span 里（链接可以在 span 里）时，去掉标签之间的换行。
+4. Lua pass 3 丢弃没有文字的标题。
+
+结果（PLAI，pandoc 3.1.3 和 3.8 输出逐字节相同）：`code_blocks` 0 → 639（`code_from_css` 657，`leftover_html_tags` 0），空标题 0，9718 行；与用一次性脚本手工预处理后的转换结果相比，正文逐行相同。代码块都是 `text`：`guess_lang` 不认识 Racket，书里也没标语言。
+
+验证：
+- `regress.sh`：Learning Go 不变；Absolute OpenBSD 只少了书末一个空的 `##`（第 4 条），已 `--update`；golden 加了 plai。改动时在 3.1.3 和 3.8 上都跑过，golden 按第八轮只留 3.8。
+- 另一份 Pro Git epub（不是 golden 里那份）在 3.1.3 / 3.8 上改前改后逐字节相同，`code_from_css` 0。
+- `check.py`：PLAI、OpenBSD、Pro Git、Learning Go 都通过。
+- 有其他 class 的 span、span 外有文字的段落不去换行；有等宽 span 而书里已有 `<pre>` 的文件不动。
+- TPOP、CLRS、golden 里的 Pro Git 这轮手头没有，需要复跑。
+
 ## 已知缺陷 / 下一步
 
 ### 转换器的限制
@@ -181,9 +205,10 @@ SKILL.md、README、epub2md.py 文件头不再写 pandoc 的版本要求，开�
 - 按句断行：中文句子之间的换行，用不带 `east_asian_line_breaks` 的渲染器看会多一个空格；以小写字母或数字开头的下一句不断；缩写表是手写的。
 - `# ` 开头的块按「后面是不是命令」判断 `console`，脚本里以小写词开头的注释（`# set up the jail`）会被误标。
 - 导航提升标题只处理 `<p>`；用 `<div>` 或 `<span>` 充当标题的书会漏掉。
+- 按 CSS 等宽字体识别的代码块没有语言（PLAI 的 Racket 都是 `text`）；只看 class 规则，`style=` 内联字体和 `<font face>` 不认。
 
 ### 待验证
 
-- 第五至七轮的改动在 Learning Go、Absolute OpenBSD（3.1.3 / 3.8）上复跑过；Pro Git、TPOP、CLRS 的 golden 需要复跑、看 diff、再 `--update`。
+- 第五至七轮、第九轮的改动在 Learning Go、Absolute OpenBSD 上复跑过，第九轮还有 PLAI；Pro Git、TPOP、CLRS 的 golden 需要复跑、看 diff、再 `--update`。
 - 代码段落识别只抽查过若干处，没有逐个核对 TPOP 的 453 个块。
 - 公式转换需要一本真实的 MathML 书来验证。

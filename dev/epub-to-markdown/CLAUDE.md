@@ -7,7 +7,7 @@
 - 读者是 Agent，不是人：追求 token 效率和可导航性，不追求版式还原。
 - 只需要：标题、段落、列表、紧凑表格、带语言的围栏代码块、`$` / `$$` 公式。其余样式一律丢弃。
 - 能按章读取比压缩率更重要：输出开头的 YAML `toc` 给出每个标题的绝对行号。
-- 不自己写 HTML 解析器：pandoc 负责解析，我们只做 Lua filter + Python 前后处理。
+- 不自己写 HTML 解析器：pandoc 负责解析，我们只做 Python 前处理、Lua filter 和 Python 后处理。
 
 ## 目录
 
@@ -16,8 +16,10 @@
 ```
 ../../skills/epub-to-markdown/    （skill 本体，npx skills 安装的就是这个目录）
   SKILL.md               skill 说明（给 Agent 看的使用和检查规则）
-  scripts/epub2md.py     转换器入口：Python 前处理、调用 pandoc、后处理
-  scripts/epub2md.lua    pandoc 的 Lua filter（流水线第 4 步）
+  scripts/epub2md.py     转换器入口：命令行参数、调用 pandoc（流水线第 3 步）
+  scripts/preprocess.py  前处理：读元数据、改写 xhtml（第 1–2 步）
+  scripts/epub2md.lua    pandoc 的 Lua filter（第 4 步）
+  scripts/postprocess.py 后处理：清理 Markdown、生成 front matter（第 5 步）
 bench/
   run.sh                 在 books/ 里所有书上跑我们和三个 baseline，输出对比表
   metrics.py             对比指标（见文件头注释）
@@ -29,20 +31,22 @@ books/                   放测试用的 .epub（不进 git）
 out/                     bench 输出（不进 git）
 ```
 
-## epub2md.py 的流水线
+## 流水线
 
-1. `metadata()`：从 OPF 读 title / authors / language，检查 DRM。
-2. `patch_epub()`：在 pandoc 之前改写 spine 里的 xhtml，写一份临时 epub。
+入口是 `epub2md.py`，每一步注明所在文件。
+
+1. `preprocess.py` 的 `metadata()`：从 OPF 读 title / authors / language，检查 DRM。
+2. `preprocess.py` 的 `patch_epub()`：在 pandoc 之前改写 spine 里的 xhtml，写一份临时 epub。
    - `listing_tables()`：第一列是连续行号（可以不从 1 开始）、每行 2–3 格的表格 → `<pre>`，缩进取 `css_margins()` 算出的首行缩进（`margin-left` + `text-indent`），级差取相邻缩进值的最小差。
    - `monospace_code()`：书里没有 `<pre>` 时，用 `css_monospace()` 从样式表找出 `font-family` 是等宽字体的 class（只认纯 class 选择器）。只含这些 span 的连续 `<p>` → `<pre>`，段落里的等宽 span → `<code>`；只有 Google Docs class（`c12`、`calibre3`）、文字全在 span 里的段落去掉标签之间的换行。等宽文字超过全书段落文字一半时整步跳过（正文用等宽字体的书）。
    - `promote_headings()`：书里没有 `<h1>`–`<h6>` 时，用导航（EPUB3 nav 优先，退回 EPUB2 NCX）把目标 `<p>` 改成 `<hN>`。只改「整个文件没有标题标签」的 spine 文件，且段落文本必须和导航标题互相包含、长度 ≤ 200；导航只指向文件（没有 `#frag`）时，在文件开头前 3 个有文字的段落里找。
-3. pandoc：`-f epub -t gfm-raw_html+tex_math_dollars --wrap=none`，新版 pandoc 再加 `-tex_math_gfm`。
+3. `epub2md.py` 调用 pandoc：`-f epub -t gfm-raw_html+tex_math_dollars --wrap=none`，新版 pandoc 再加 `-tex_math_gfm`。
 4. Lua filter `epub2md.lua`（先把 Str 里的不间断空格换成普通空格，再四遍）：
    - pass 0：按 `<section>` / `data-type` 章节的嵌套深度重定标题级别（只降不升；`<section>` 和紧挨着的 `<div class="sect1">` 只算一层）。
    - pass 1，按文档顺序：记录每个元素 id 属于哪个标题（slug），以及哪些 spine 文件有文字。提示框、侧栏、例子、插图里的标题不算节，里面的 id 归到外层的节。
    - pass 2：代码块语言（`data-code-language` 属性或 class）、`<tt>` 段落 → 代码块、`<aside>`/提示框/侧栏 → 引用块（框内标题并入标签）、例子/插图标题 → 粗体段落、交叉链接改写成 `#slug`、bold/italic class → 强调、嵌套引用压平、无 alt 图片丢弃。
    - pass 3：删掉所有残留的 raw HTML、空段落和空标题。
-5. `postprocess()`：压缩表格、合并空行、合并索引里的重复链接、合并标题里的连续空格、统计、收集标题；`front_matter()` 计算行号偏移。
+5. `postprocess.py` 的 `postprocess()`：压缩表格、合并空行、合并索引里的重复链接、合并标题里的连续空格、统计、收集标题；`front_matter()` 计算行号偏移。
 
 ## 改动时的规则
 

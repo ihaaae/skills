@@ -168,6 +168,10 @@ root 提示符：210 个块以 `# ` 开头，其中 208 个是 root 会话（`# 
 
 验证：Learning Go、Absolute OpenBSD 在 pandoc 3.1.3 / 3.8 上 `check.py` 都通过；OpenBSD 的 diff 只有脚注位置；golden 更新了这两本书的 4 行（openbsd 3.8 是新增）。Pro Git、TPOP、CLRS 这轮手头没有，第 4 条（展开 Div）可能改变它们的脚注位置，需要复跑、看 diff、再 `--update`。
 
+## 8. 不写 pandoc 版本要求（2026-10-20）
+
+SKILL.md、README、epub2md.py 文件头不再写 pandoc 的版本要求，开发规则也不再要求改动在 3.1.x 和 3.8 上都验证：哪个版本真的转坏了再写。回归只在本机装的 pandoc 上跑（现在是 3.8），golden 删掉 3.1.3 的 5 行。转换器没改，兼容旧版的分支（`canon()`、`tex_math_gfm` 检测）留着。
+
 ## 已知缺陷 / 下一步
 
 ### 转换器的限制

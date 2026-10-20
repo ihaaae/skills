@@ -187,7 +187,7 @@ Programming Languages: Application and Interpretation 3.2.5（plai.org 的 epub�
 3. 多余空格：只在段落里的 span 全是 Google Docs class（`c\d+`，calibre 改名的 `calibre\d+`）、且文字都在 span 里（链接可以在 span 里）时，去掉标签之间的换行。
 4. Lua pass 3 丢弃没有文字的标题。
 
-结果（PLAI，pandoc 3.1.3 和 3.8 输出逐字节相同）：`code_blocks` 0 → 639（`code_from_css` 657，`leftover_html_tags` 0），空标题 0，9718 行；与用一次性脚本手工预处理后的转换结果相比，正文逐行相同。代码块都是 `text`：`guess_lang` 不认识 Racket，书里也没标语言。
+结果（PLAI，pandoc 3.1.3 和 3.8 输出逐字节相同）：`code_blocks` 0 → 639（`code_from_css` 657，`leftover_html_tags` 0），空标题 0，9718 行；与用一次性脚本手工预处理后的转换结果相比（都带 `--media`，都是 9720 行），除 front matter 的 `source:` 外 86 行不同，都只差链接前后的空格：手工脚本留下了 `[文字](…) ,`、`\[ [👉](…) \]`、`— [名字](…)` 里多余的空格，这一版没有，对照原始 HTML 是这一版对。本轮最初记的是“正文逐行相同”，那次比较的脚本把两边正文都删空了，结论不成立。代码块都是 `text`：`guess_lang` 不认识 Racket，书里也没标语言。
 
 验证：
 - `regress.sh`：Learning Go 不变；Absolute OpenBSD 只少了书末一个空的 `##`（第 4 条），已 `--update`；golden 加了 plai。改动时在 3.1.3 和 3.8 上都跑过，golden 按第八轮只留 3.8。

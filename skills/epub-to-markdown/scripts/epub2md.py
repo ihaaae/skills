@@ -6,7 +6,7 @@ admonitions, cross-references and raw HTML; this script then compacts tables
 and prepends a YAML front matter with a line-numbered table of contents.
 
 Usage: epub2md.py BOOK.epub [-o OUT.md] [--toc-depth N] [--media DIR]
-Requires: pandoc >= 3.0 on PATH (tested with 3.1.3 and 3.8).
+Requires: pandoc on PATH.
 """
 import argparse, html, json, os, posixpath, re, subprocess, sys, tempfile, zipfile
 from urllib.parse import unquote

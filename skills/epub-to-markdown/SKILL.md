@@ -7,7 +7,7 @@ description: 把 ePub 电子书转成单个给 Agent 读的 Markdown 文件（�
 
 把一本 ePub 转成**一个** Markdown 文件，目标读者是 Agent：样式从简，只保留标题、段落、列表、表格、代码块、公式，开头附带行号目录，方便按章节读取而不是整本读入。
 
-依赖：`pandoc` ≥ 3.0（已在 3.1.3 和 3.8 上验证）和 `python3`（只用标准库）。没有 pandoc 时先安装：macOS `brew install pandoc`，Debian/Ubuntu `apt install pandoc`。
+依赖：`pandoc` 和 `python3`（只用标准库）。没有 pandoc 时先安装：macOS `brew install pandoc`，Debian/Ubuntu `apt install pandoc`。
 
 ## 步骤
 

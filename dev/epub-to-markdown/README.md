@@ -4,7 +4,7 @@
 
 ## 安装
 
-依赖 `pandoc` ≥ 3.0 和 `python3`（只用标准库）：
+依赖 `pandoc` 和 `python3`（只用标准库）：
 
 ```bash
 brew install pandoc

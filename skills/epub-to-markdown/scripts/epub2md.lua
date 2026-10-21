@@ -387,6 +387,83 @@ local function code_para(el)
   return pandoc.CodeBlock(text, pandoc.Attr("", {guess_lang(text)}))
 end
 
+-- gfm writes a table as a pipe table only when it has a header row and every
+-- cell is one line; anything else would be HTML, which gfm-raw_html prints as
+-- "[TABLE]". Google Docs tables have no <th> and cells of several paragraphs
+-- or code lines: take the first row as the header and join a cell's lines with
+-- <br>, the one piece of HTML a pipe-table cell can hold
+local BR = pandoc.RawInline("gfm", "<br>")
+
+local function cell_line(blocks)
+  local out = pandoc.List()
+  local function add(inlines)
+    if #out > 0 and #inlines > 0 then out:insert(BR) end
+    out:extend(inlines)
+  end
+  for _, b in ipairs(blocks) do
+    if b.t == "Para" or b.t == "Plain" then
+      local line = pandoc.List()
+      for _, x in ipairs(b.content) do
+        if x.t == "LineBreak" then add(line); line = pandoc.List()
+        else line:insert(x) end
+      end
+      add(line)
+    elseif b.t == "CodeBlock" then
+      for l in (b.text .. "\n"):gmatch("(.-)\n") do
+        -- a code cell's indentation would collapse in Markdown; keep it as nbsp
+        local lead, rest = l:match("^( *)(.*)$")
+        if rest ~= "" then add({pandoc.Code(("\194\160"):rep(#lead) .. rest)}) end
+      end
+    elseif b.t == "BulletList" or b.t == "OrderedList" then
+      for i, item in ipairs(b.content) do
+        local mark = b.t == "BulletList" and "- " or (i .. ". ")
+        local l = cell_line(item)
+        if #l > 0 then add(pandoc.List({pandoc.Str(mark)}) .. l) end
+      end
+    elseif b.t == "Div" or b.t == "BlockQuote" then
+      add(cell_line(b.content))
+    else
+      local s = stringify(b)
+      if s:match("%S") then add({pandoc.Str(s)}) end
+    end
+  end
+  return out
+end
+
+local function one_line(c)
+  local bs = c.contents
+  return c.row_span == 1 and c.col_span == 1 and (#bs == 0 or (#bs == 1
+    and (bs[1].t == "Plain" or bs[1].t == "Para")
+    and not bs[1].content:find_if(function(x) return x.t == "LineBreak" end)))
+end
+
+local function pipe_table(el)
+  el.attr = pandoc.Attr()
+  local rows = pandoc.List()  -- pandoc.List(x) would extend x itself
+  rows:extend(el.head.rows)
+  for _, b in ipairs(el.bodies) do rows:extend(b.head); rows:extend(b.body) end
+  rows:extend(el.foot.rows)
+  local simple = true
+  for _, r in ipairs(rows) do
+    for _, c in ipairs(r.cells) do simple = simple and one_line(c) end
+  end
+  -- tables pandoc can already write stay exactly as they were
+  if simple then return el end
+  for _, r in ipairs(rows) do
+    for _, c in ipairs(r.cells) do
+      if not one_line(c) then c.contents = pandoc.Blocks{pandoc.Plain(cell_line(c.contents))} end
+      c.row_span, c.col_span = 1, 1
+    end
+  end
+  local body = el.bodies[1]
+  if #el.head.rows == 0 and #el.bodies == 1 and #body.head == 0 and #body.body > 1 then
+    el.head.rows = {body.body[1]}
+    body.body = pandoc.List({table.unpack(body.body, 2)})
+    el.bodies = {body}
+  end
+  return el
+end
+
 local clean = {
   Code = function(el)
     el.text = el.text:gsub("\194\160", " ")
@@ -501,7 +578,7 @@ local clean = {
     return el
   end,
 
-  Table = function(el) el.attr = pandoc.Attr() return el end,
+  Table = pipe_table,
   Figure = function(el) el.attr = pandoc.Attr() return el end,
 
   Span = function(el)

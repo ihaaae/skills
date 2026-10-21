@@ -196,6 +196,23 @@ Programming Languages: Application and Interpretation 3.2.5（plai.org 的 epub�
 - 有其他 class 的 span、span 外有文字的段落不去换行；有等宽 span 而书里已有 `<pre>` 的文件不动。
 - TPOP、CLRS、golden 里的 Pro Git 这轮手头没有，需要复跑。
 
+## 10. PLAI：表格和嵌套列表（第十轮，2026-10-21）
+
+第九轮之后 PLAI 还有两处坏掉，都是 Google Docs 导出的通病：
+
+1. 两张表格（“Surface Syntax | AST”、各语言 truthy/falsy 对照）变成字面的 `[TABLE]`。格子里是多个 `<p>`，预处理又把等宽段落合成了 `<pre>`；gfm 只把「每格一行」的表格写成管道表格，别的写成 HTML，`-raw_html` 下就成了 `[TABLE]`。
+2. 嵌套列表压平：Google Docs 把子项导出成紧挨着的另一个 `<ul class="c19">`，层级只在 `<li>` 的 class 上（`c20` `margin-left: 36pt`，`c35` 72pt）。输出是几个独立列表，中间隔着 pandoc 的 `&nbsp;` 分隔段落。这些列表项里的行内代码（`num`、`Exp`）也没变成 `` `num` ``，“`Exp` s” 一类空格也在：`monospace_code()` 只处理 `<p>`，`<li>` 直接装 span。
+
+改动：
+
+1. Lua `pipe_table()`：有格子不是一行（多段、代码块、列表、合并单元格）的表格，每格的几行用 `<br>` 连成一行（代码块每行一个行内代码，行首缩进换成不间断空格），合并单元格拆开；这样的表格没有表头时第一行当表头。本来就能写成管道表格的表格原样不动，所以别的书的表格输出不变。
+2. 预处理 `nest_lists()`：相邻（之间只有空白）、本身没有子列表的 `<ul>` / `<ol>`，列表项缩进有两级以上时合成一个嵌套列表；级别是 `css_margins()` 缩进值的排名，一项最多比上一项深一级。
+3. `monospace_code()` 对不含 `<p>` / 子列表的 `<li>` 也做段落那两步（去掉 span 之间的换行、等宽 span → `<code>`）；等宽 span 首尾的空格移到 `<code>` 外（“statement,` (/ 1 0)`” → “statement, `(/ 1 0)`”）。
+
+结果（PLAI，pandoc 3.8）：`[TABLE]` 2 → 0，`tables` 2 → 4，`nested_lists` 1（全书只有第 019 段这一处多级列表），9718 → 9724 行；其余差异都是列表项里多出的行内代码和去掉的多余空格（约 50 行），逐条看过。`check.py` 通过。
+
+验证：`regress.sh` 只有 plai，已 `--update`。Pro Git、Learning Go、OpenBSD、TPOP、CLRS 这轮手头没有：表格只改原来会成 `[TABLE]` 的；列表合并只在相邻平级列表的缩进 class 不同时发生；`<li>` 的行内代码只在按 CSS 识别等宽字体的书上做，预计不变，需要复跑确认。
+
 ## 已知缺陷 / 下一步
 
 ### 转换器的限制
@@ -207,8 +224,10 @@ Programming Languages: Application and Interpretation 3.2.5（plai.org 的 epub�
 - 导航提升标题只处理 `<p>`；用 `<div>` 或 `<span>` 充当标题的书会漏掉。
 - 按 CSS 等宽字体识别的代码块没有语言（PLAI 的 Racket 都是 `text`）；只看 class 规则，`style=` 内联字体和 `<font face>` 不认。
 
+- 写不成管道表格的表格：合并单元格拆成单格，跨列的表格会错位；没有表头时第一行当表头是猜的。
+
 ### 待验证
 
-- 第五至七轮、第九轮的改动在 Learning Go、Absolute OpenBSD 上复跑过，第九轮还有 PLAI；Pro Git、TPOP、CLRS 的 golden 需要复跑、看 diff、再 `--update`。
+- 第五至七轮、第九轮的改动在 Learning Go、Absolute OpenBSD 上复跑过，第九轮还有 PLAI；Pro Git、TPOP、CLRS 的 golden 需要复跑、看 diff、再 `--update`；第十轮的改动还要在 Learning Go、OpenBSD 上复跑。
 - 代码段落识别只抽查过若干处，没有逐个核对 TPOP 的 453 个块。
 - 公式转换需要一本真实的 MathML 书来验证。

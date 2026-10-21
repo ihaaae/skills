@@ -238,8 +238,17 @@ def monospace_code(text, mono):
             p = re.sub(r">\s*\n\s*<", "><", p)
         if re.search(r"<(?:code|tt|kbd|samp|pre)\b", p):
             return p  # the book marks code itself
-        return SPAN.sub(lambda m: f"<code>{m.group(2)}</code>" if is_mono(m.group(1)) and m.group(2).strip() else m.group(0), p)
+        def code(m):
+            if not (is_mono(m.group(1)) and m.group(2).strip()):
+                return m.group(0)
+            # the span's outer spaces belong to the prose: " (/ 1 0)" -> " `(/ 1 0)`"
+            lead, body, trail = re.fullmatch(r"(\s*)(.*?)(\s*)", m.group(2), re.S).groups()
+            return f"{lead}<code>{body}</code>{trail}"
+        return SPAN.sub(code, p)
 
+    # list items hold their text directly in spans, the same way paragraphs do
+    text = re.sub(r"<li\b[^>]*>((?:(?!</?(?:li|p|ul|ol|div)\b).)*?)</li>",
+                  lambda m: prose(m.group(0), m.group(1)), text, flags=re.S)
     out, pos, run, count, code_chars, chars = [], 0, [], 0, 0, 0
     def flush():
         nonlocal count
@@ -261,6 +270,63 @@ def monospace_code(text, mono):
     flush()
     out.append(text[pos:])
     return "".join(out), count, code_chars, chars
+
+
+FLAT_LIST = re.compile(r"<(ul|ol)\b[^>]*>(?:(?!<(?:ul|ol)\b).)*?</\1>", re.S)
+LI = re.compile(r"(<li\b[^>]*>)(.*?)</li>", re.S)
+
+
+def nest_lists(text, margins):
+    """Google Docs exports a nested list as sibling <ul>/<ol> whose items differ
+    only in a margin-left class (c20: 36pt, c35: 72pt). Merge each run of
+    adjacent flat lists into one list nested by that indent. Returns the new
+    text and the number of runs merged."""
+    def indent(open_tag):
+        m = re.search(r"\bclass=[\"']([^\"']*)[\"']", open_tag)
+        return max([margins.get(c, 0) for c in m.group(1).split()] if m else [0])
+
+    def merge(lists):
+        items = [(indent(li.group(1)), tag, opening, li.group(1), li.group(2))
+                 for tag, opening, body in lists for li in LI.finditer(body)]
+        levels = sorted({round(i, 1) for i, *_ in items})
+        if len(levels) < 2:
+            return None
+        out, stack = [], []
+        for i, tag, opening, li_open, inner in items:
+            # an item may sit at most one level below the one before it
+            level = min(levels.index(round(i, 1)), len(stack))
+            while len(stack) > level + 1:
+                out.append(f"</li></{stack.pop()}>")
+            if len(stack) == level + 1:
+                out.append("</li>")
+                if stack[-1] != tag:
+                    out.append(f"</{stack.pop()}>")
+            if len(stack) < level + 1:
+                out.append(opening); stack.append(tag)
+            out.append(li_open + inner)
+        while stack:
+            out.append(f"</li></{stack.pop()}>")
+        return "".join(out)
+
+    out, pos, count = [], 0, 0
+    run, start, end = [], 0, 0
+    def flush():
+        nonlocal count
+        new = merge(run) if len(run) > 1 else None
+        out.append(new if new is not None else text[start:end])
+        count += new is not None
+    for m in FLAT_LIST.finditer(text):
+        if run and text[end:m.start()].strip():
+            flush(); run = []
+        if not run:
+            out.append(text[pos:m.start()]); start = m.start()
+        opening = text[m.start():text.index(">", m.start()) + 1]
+        run.append((m.group(1), opening, m.group(0)))
+        end = pos = m.end()
+    if run:
+        flush()
+    out.append(text[pos:])
+    return "".join(out), count
 
 
 NOTE_REF = re.compile(r"<sup\b[^>]*>\s*\[?\s*<a\b[^>]*\bhref=[\"'][^\"'#]*#([^\"']+)[\"']"
@@ -285,7 +351,7 @@ def footnote_anchors(texts):
 def patch_epub(src, tmp):
     """Rewrite the spine documents before pandoc sees them; return the path of
     a patched copy (or src if nothing changed) and a few counts."""
-    stats = {"headings_from_nav": 0, "listing_tables": 0, "code_from_css": 0}
+    stats = {"headings_from_nav": 0, "listing_tables": 0, "code_from_css": 0, "nested_lists": 0}
     try:
         with zipfile.ZipFile(src) as z:
             docs = {n: z.read(n).decode("utf8", "replace") for n in z.namelist()
@@ -305,6 +371,10 @@ def patch_epub(src, tmp):
                     for name, (text, n, _, _) in done.items():
                         texts[name] = text
                         stats["code_from_css"] += n
+            for name, text in texts.items():
+                if "<li" in text:
+                    texts[name], n = nest_lists(text, margins)
+                    stats["nested_lists"] += n
             for name, text in texts.items():
                 if "<table" in text:
                     new = listing_tables(text, margins)

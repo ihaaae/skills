@@ -38,13 +38,14 @@ out/                     bench 输出（不进 git）
 1. `preprocess.py` 的 `metadata()`：从 OPF 读 title / authors / language，检查 DRM。
 2. `preprocess.py` 的 `patch_epub()`：在 pandoc 之前改写 spine 里的 xhtml，写一份临时 epub。
    - `listing_tables()`：第一列是连续行号（可以不从 1 开始）、每行 2–3 格的表格 → `<pre>`，缩进取 `css_margins()` 算出的首行缩进（`margin-left` + `text-indent`），级差取相邻缩进值的最小差。
-   - `monospace_code()`：书里没有 `<pre>` 时，用 `css_monospace()` 从样式表找出 `font-family` 是等宽字体的 class（只认纯 class 选择器）。只含这些 span 的连续 `<p>` → `<pre>`，段落里的等宽 span → `<code>`；只有 Google Docs class（`c12`、`calibre3`）、文字全在 span 里的段落去掉标签之间的换行。等宽文字超过全书段落文字一半时整步跳过（正文用等宽字体的书）。
+   - `monospace_code()`：书里没有 `<pre>` 时，用 `css_monospace()` 从样式表找出 `font-family` 是等宽字体的 class（只认纯 class 选择器）。只含这些 span 的连续 `<p>` → `<pre>`，段落和列表项（不含 `<p>` / 子列表的 `<li>`）里的等宽 span → `<code>`，span 首尾的空格留在 `<code>` 外；只有 Google Docs class（`c12`、`calibre3`）、文字全在 span 里的段落去掉标签之间的换行。等宽文字超过全书段落文字一半时整步跳过（正文用等宽字体的书）。
+   - `nest_lists()`：相邻（之间只有空白）、本身没有子列表的 `<ul>` / `<ol>`，列表项缩进（`css_margins()`）有两级以上时合成一个嵌套列表；级别是缩进值的排名，一项最多比上一项深一级（Google Docs 导出）。
    - `promote_headings()`：书里没有 `<h1>`–`<h6>` 时，用导航（EPUB3 nav 优先，退回 EPUB2 NCX）把目标 `<p>` 改成 `<hN>`。只改「整个文件没有标题标签」的 spine 文件，且段落文本必须和导航标题互相包含、长度 ≤ 200；导航只指向文件（没有 `#frag`）时，在文件开头前 3 个有文字的段落里找。
 3. `epub2md.py` 调用 pandoc：`-f epub -t gfm-raw_html+tex_math_dollars --wrap=none`，新版 pandoc 再加 `-tex_math_gfm`。
 4. Lua filter `epub2md.lua`（先把 Str 里的不间断空格换成普通空格，再四遍）：
    - pass 0：按 `<section>` / `data-type` 章节的嵌套深度重定标题级别（只降不升；`<section>` 和紧挨着的 `<div class="sect1">` 只算一层）。
    - pass 1，按文档顺序：记录每个元素 id 属于哪个标题（slug），以及哪些 spine 文件有文字。提示框、侧栏、例子、插图里的标题不算节，里面的 id 归到外层的节。
-   - pass 2：代码块语言（`data-code-language` 属性或 class）、`<tt>` 段落 → 代码块、`<aside>`/提示框/侧栏 → 引用块（框内标题并入标签）、例子/插图标题 → 粗体段落、交叉链接改写成 `#slug`、bold/italic class → 强调、嵌套引用压平、无 alt 图片丢弃。
+   - pass 2：代码块语言（`data-code-language` 属性或 class）、`<tt>` 段落 → 代码块、`<aside>`/提示框/侧栏 → 引用块（框内标题并入标签）、例子/插图标题 → 粗体段落、交叉链接改写成 `#slug`、pandoc 写不成管道表格的表格（格子里多段、代码块、列表）每格用 `<br>` 连成一行，没有表头时第一行当表头（`pipe_table()`；本来就能写的表格不动）、bold/italic class → 强调、嵌套引用压平、无 alt 图片丢弃。
    - pass 3：删掉所有残留的 raw HTML、空段落和空标题。
 5. `postprocess.py` 的 `postprocess()`：压缩表格、合并空行、合并索引里的重复链接、合并标题里的连续空格、统计、收集标题；`front_matter()` 计算行号偏移。
 

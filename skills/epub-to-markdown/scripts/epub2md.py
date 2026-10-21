@@ -4,10 +4,11 @@
 The pipeline, with the file for each step (all next to this script):
   1. preprocess.py   metadata(): title, authors, language from the OPF
   2. preprocess.py   patch_epub(): rewrite the spine documents (headings from
-                     the navigation, footnote anchors, code from CSS, listings)
+                     the navigation, footnote anchors, code from CSS, nested
+                     lists, listings)
   3. this script     run pandoc -f epub -t gfm
   4. epub2md.lua     pandoc's Lua filter: code-block languages, admonitions,
-                     cross-references, raw HTML
+                     cross-references, multi-line table cells, raw HTML
   5. postprocess.py  compact tables, split sentences, and prepend a YAML front
                      matter with a line-numbered table of contents
 

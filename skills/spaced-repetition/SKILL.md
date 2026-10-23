@@ -21,13 +21,13 @@ Three ideas carry it:
 | Collection: notes, cards, schedule, review log | `$LEARN_SRS_COLLECTION` (the workspace's mise env sets it; required, no default). Query the collection only through this path | **never** |
 | Backups | `backups/` next to the collection | no |
 
-One collection for all topics; one deck per topic, `Learn::<topic directory name>`. Card *content* changes only by editing YAML and running `sync`; card *schedule* changes only by reviewing in Anki (plus `flag` / `suspend`). Never edit the collection with any other tool.
+One collection for all topics; one deck per topic, `<root deck>::<topic directory name>`. The root deck is `$LEARN_SRS_DECK` (default `Learn`). Card *content* changes only by editing YAML and running `sync`; card *schedule* changes only by reviewing in Anki (plus `flag` / `suspend`). Never edit the collection with any other tool.
 
 **Close Anki first.** The Anki desktop app must not have the collection open while `srs.py` writes to it (`sync --apply`, `flag`, `suspend`, `unsuspend`). Ask the learner to quit Anki before these, and to reopen it afterwards.
 
 ## The script
 
-Run from inside a topic directory (or pass `--root`). Run from the workspace root above several topics, it covers all of them (deck `Learn`).
+Run from inside a topic directory (or pass `--root`). Run from the workspace root above several topics, it covers all of them (the root deck).
 
 ```
 uv run <skill-dir>/scripts/srs.py <command>

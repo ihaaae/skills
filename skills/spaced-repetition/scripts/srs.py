@@ -7,6 +7,7 @@
 
 卡片内容的来源是专题里的 srs/<节点ID>.yaml（进 git）；调度和复习记录在本地 collection 里（不进 git）。
 collection 路径：$LEARN_SRS_COLLECTION（必须设置，通常指向 Anki profile 里的 collection.anki2）；backups/ 放在它旁边。
+根 deck 名：$LEARN_SRS_DECK（默认 Learn）；每个专题一个子 deck <根 deck>::<专题目录名>。
 本脚本写 collection 时，Anki 桌面版不能打开它。
 
 用法（在专题目录内运行，或用 --root 指定；在含多个专题的工作区根目录运行则覆盖全部专题）：
@@ -88,7 +89,7 @@ class Topic:
 
     @property
     def deck(self) -> str:
-        return f"Learn::{self.name}"
+        return f"{root_deck()}::{self.name}"
 
 
 @dataclass
@@ -111,11 +112,11 @@ def find_scope(explicit: str | None) -> Scope:
                 p = d
                 break
     if (p / "topic.yaml").exists():
-        return Scope([load_topic(p)], f"Learn::{p.name}", True)
+        return Scope([load_topic(p)], f"{root_deck()}::{p.name}", True)
     subs = sorted(d for d in p.iterdir() if d.is_dir() and (d / "topic.yaml").exists()) if p.is_dir() else []
     if not subs:
         sys.exit(f"{p} 不是专题目录（没有 topic.yaml），下面也没有专题。请在专题目录内运行，或用 --root 指定。")
-    return Scope([load_topic(d) for d in subs], "Learn", False)
+    return Scope([load_topic(d) for d in subs], root_deck(), False)
 
 
 def load_nodes(root: Path) -> dict[str, Node]:
@@ -285,6 +286,10 @@ def collection_path() -> Path:
         # 没有默认路径：默认路径会悄悄新建一个空 collection，看起来像卡全丢了
         sys.exit("srs.py: LEARN_SRS_COLLECTION 未设置（应指向 Anki profile 的 collection.anki2）")
     return Path(p).expanduser()
+
+
+def root_deck() -> str:
+    return os.environ.get("LEARN_SRS_DECK") or "Learn"
 
 
 def open_col():

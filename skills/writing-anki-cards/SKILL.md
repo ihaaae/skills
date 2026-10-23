@@ -83,6 +83,8 @@ Add a line here when fixing a flagged card shows a pattern the twenty rules don'
     back: |
       `a\nb`（一行）。
   ```
+- A definition card gives the term and asks for its meaning, not the other way round. "反复抽 ε、算出 f(ε)，这些 x 的 distribution 叫 {{c1::…}}" only tests the name; "generated distribution q 是哪些样本的 distribution？" tests the idea, which is what later lessons build on.
+- If the back contrasts the answer with something else ("X, not Y"), the contrast is a clue and belongs on the front. "判断 q ≈ p 时，比较的是什么？" admits many answers the learner can't check; "比较的不是单个样本像不像真的，而是 {{c1::各类样本的比例}}" admits one. In general, when a front could be answered correctly in several ways ("A 和 B 是什么关系？"), add the condition that pins down the one on the back.
 
 ## Checks before showing drafts to the learner
 

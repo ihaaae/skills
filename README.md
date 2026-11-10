@@ -29,6 +29,7 @@ npx skills remove ihaaae/skills -g
 | [anki-review](skills/anki-review) | Batch Anki review workflow |
 | [comparing-tables](skills/comparing-tables) | Diff Excel/CSV/TSV tables with a deterministic CLI |
 | [decoding-barthez](skills/decoding-barthez) | 解读「巴特兹」篮球评论中的谐音暗语与类比论证 |
+| [epub-to-markdown](skills/epub-to-markdown) | 把 ePub 转成带行号目录、给 Agent 读的单个 Markdown 文件 |
 | [finding-feeds](skills/finding-feeds) | Discover and verify RSS/Atom/JSON Feed URLs |
 | [fleet-ocr](skills/fleet-ocr) | 通过私有 HTTP OCR API 将 PDF 识别为 Markdown/JSON/图片并渐进读取 |
 | [formatting-latex](skills/formatting-latex) | Compile, lint, and reformat LaTeX sources |
@@ -37,7 +38,7 @@ npx skills remove ihaaae/skills -g
 | [syncing-notes-to-anki](skills/syncing-notes-to-anki) | Author Markdown flashcards and sync them to Anki via yanki |
 | [using-nowledge-mem](skills/using-nowledge-mem) | Use Nowledge Mem via remote MCP |
 
-The learning skills (topic-graph, progressive-learning, book-graph, epub-to-markdown, writing-for-learners, writing-anki-cards) moved to [ihaaae/Learn](https://github.com/ihaaae/Learn) (`.agents/skills/`) in November 2026; their history before the move is here.
+The learning skills (topic-graph, progressive-learning, book-graph, writing-for-learners, writing-anki-cards) moved to [ihaaae/Learn](https://github.com/ihaaae/Learn) (`.agents/skills/`) in November 2026; their history before the move is here.
 
 ## Layout
 

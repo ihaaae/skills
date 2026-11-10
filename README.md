@@ -33,6 +33,7 @@ npx skills remove ihaaae/skills -g
 | [finding-feeds](skills/finding-feeds) | Discover and verify RSS/Atom/JSON Feed URLs |
 | [fleet-ocr](skills/fleet-ocr) | 通过私有 HTTP OCR API 将 PDF 识别为 Markdown/JSON/图片并渐进读取 |
 | [formatting-latex](skills/formatting-latex) | Compile, lint, and reformat LaTeX sources |
+| [pdf-to-markdown](skills/pdf-to-markdown) | 用 Datalab 官方 Marker API 把 PDF（含扫描版、公式）转成带行号目录和页码标记的单个 Markdown |
 | [porting-anki-to-yanki](skills/porting-anki-to-yanki) | Convert Anki plain-text exports into yanki Markdown notes |
 | [spaced-repetition](skills/spaced-repetition) | 把学过的知识点映射成 Anki 卡片：atom 写在 YAML 里，同步进 collection，用 FSRS 调度；复习在 Anki 桌面版里做，被 flag 的卡片回到 YAML 修改 |
 | [syncing-notes-to-anki](skills/syncing-notes-to-anki) | Author Markdown flashcards and sync them to Anki via yanki |

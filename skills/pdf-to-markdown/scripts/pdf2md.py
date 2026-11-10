@@ -3,7 +3,7 @@
 
     pdf2md.py BOOK.pdf -o BOOK.md [--pages 0-9,20] [--mode accurate|balanced|fast] [--media DIR]
 
-The API key comes from $DATALAB_API_KEY, or the file ~/.config/datalab/api-key (one line, mode 0600).
+The API key comes from $DATALAB_API_KEY or $DATALAB (the name of the Amp secret), or the file ~/.config/datalab/api-key (one line, mode 0600).
 It is sent only in the X-API-Key header and never printed. Standard library only.
 
 Output: YAML front matter (title, source, pages, lines, toc of [line, level, title]), then the
@@ -37,11 +37,11 @@ MATH_RE = re.compile(r"\$\$.+?\$\$|\$[^$\n]+\$", re.S)
 
 
 def api_key() -> str:
-    key = os.environ.get("DATALAB_API_KEY", "").strip()
+    key = (os.environ.get("DATALAB_API_KEY") or os.environ.get("DATALAB") or "").strip()
     if not key and KEY_FILE.is_file():
         key = KEY_FILE.read_text().strip()
     if not key:
-        raise SystemExit(f"no Datalab API key: set DATALAB_API_KEY or write it to {KEY_FILE}")
+        raise SystemExit(f"no Datalab API key: set DATALAB_API_KEY (or DATALAB) or write it to {KEY_FILE}")
     return key
 
 

@@ -11,7 +11,7 @@ description: 把 PDF（含扫描版、公式多的书和论文）用 Datalab 官
 
 ## Key
 
-从环境变量 `DATALAB_API_KEY` 读取，没有时读 `~/.config/datalab/api-key`（只有一行，权限 0600，不进 Git）。都没有时，请用户自己在本机写入这个文件，不要让用户把 key 贴进对话，也不要打印它。
+从环境变量 `DATALAB_API_KEY` 或 `DATALAB` 读取（Amp 的 secret 名是 `DATALAB`，runner 用 `amp --no-tui --amp-env` 启动时会注入），都没有时读 `~/.config/datalab/api-key`（只有一行，权限 0600，不进 Git）。都没有时，请用户自己在本机写入这个文件，不要让用户把 key 贴进对话，也不要打印它。
 
 ## 费用与隐私
 

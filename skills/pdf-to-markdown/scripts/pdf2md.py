@@ -58,7 +58,8 @@ def multipart(fields: dict[str, str], file: Path) -> tuple[bytes, str]:
 
 
 def request(url: str, key: str | None, data: bytes | None = None, ctype: str | None = None) -> dict:
-    headers = {"X-API-Key": key} if key else {}
+    # Datalab is behind Cloudflare, which rejects urllib's default User-Agent (HTTP 403, error code 1010).
+    headers = {"User-Agent": "pdf-to-markdown/1.0"} | ({"X-API-Key": key} if key else {})
     if ctype:
         headers["Content-Type"] = ctype
     req = urllib.request.Request(url, data, headers)
@@ -75,7 +76,8 @@ def request(url: str, key: str | None, data: bytes | None = None, ctype: str | N
 
 
 def convert(pdf: Path, key: str, mode: str, pages: str | None) -> dict:
-    fields = {"output_format": "markdown", "mode": mode, "paginate": "true"}
+    # Image captions are written by a model, not taken from the book; leave them out.
+    fields = {"output_format": "markdown", "mode": mode, "paginate": "true", "disable_image_captions": "true"}
     if pages:
         fields["page_range"] = pages
     body, ctype = multipart(fields, pdf)

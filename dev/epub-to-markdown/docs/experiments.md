@@ -1,0 +1,233 @@
+# 实验记录
+
+## 0. 调研：已有工具（2026-10-07）
+
+| 工具 | 形态 | 要点 |
+|---|---|---|
+| [books-for-bots](https://github.com/prime-radiant-inc/books-for-bots) | Rust CLI | 单文件 GFM，YAML frontmatter 列出每章的行号和字节偏移；本项目 toc 设计参考了它 |
+| [epub2md](https://hn.svelte.dev/item/45951820) | CLI | 每章一个 Markdown 文件 |
+| [librarian-cli](https://enterprisedna.co/directories/mcp/terobyte-librarian-cli) | Python CLI + MCP | 分章、带 token 计数；项目很小 |
+| [epub skill (aliceisjustplaying)](https://tomevault.io/tome/aliceisjustplaying/claude-resources-monorepo) | Claude Code skill | jszip + turndown，metadata / toc / chapter / full 子命令 |
+| [markdown-converter skill](https://gist.github.com/AbhimanyuAryan/2bf1336f51cbacfb238c00426857d760) | skill | 包装 `uvx markitdown` |
+| [book-to-skill](https://github.com/virgiliojr94/book-to-skill/wiki) | skill | 把整本书做成一个 skill，目标不同 |
+| [anydoc](https://github.com/codehornets/anydoc) | Rust 库 + skill | 多格式转 GFM |
+| MarkItDown、pandoc | 通用转换器 | baseline |
+
+结论：没有一个同时做对「代码块语言」和「章节索引」，公式处理都没提。决定用 pandoc + Lua filter + 薄后处理自己做。
+
+对比时使用的版本：pandoc 3.1.3（另用 3.8 交叉验证）、markitdown 0.1.7、books-for-bots 0.1.1。
+
+## 1. Pro Git 中文版（第一轮）
+
+源：21 个 xhtml，870 个 `<pre class="source language-*">`（console 734、ruby 37、空语言 34……），62 个 `<aside class="admonition">`，8 张表，188 张图。
+
+baseline 的问题：
+- 三者都丢了代码语言；pandoc 把第一个 class `source` 当成语言写成 ```` ``` source ````。
+- pandoc 默认 `-t gfm` 留下 9848 个 `<div>`/`<span>`，必须 `-raw_html`；即使这样 `<aside>` 仍作为 raw HTML 漏出来。
+- pandoc 的 gfm 表格按列宽补空格（表格部分 57 KB vs 紧凑 25 KB）。
+- 跨章链接：pandoc 是 `#ch10-git-internals.xhtml#_refspec`（失效），markitdown 是 `#_services_hooks`（失效），books-for-bots 把 76 处跨章引用误判成脚注 `[^c9-_git_reset]`，链接文字丢失且没有定义。
+- books-for-bots 丢图片和图注。
+
+我们的结果（`bench/metrics.py`）：
+
+| file | bytes | est_tok | toc | headings | fences | lang | nbsp | inline | links | dead | html | images |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| bfb.md | 857525 | 267773 | 20 | 556 | 870 | 0 | 34 | 3037 | 204 | 76 | 0 | 0 |
+| markitdown.md | 877872 | 273921 | 0 | 284 | 871 | 0 | 35 | 1086 | 83 | 83 | 12 | 104 |
+| pandoc.md | 926392 | 287429 | 0 | 556 | 870 | 0 | 35 | 3101 | 283 | 283 | 126 | 189 |
+| skill.md | 883767 | 275840 | 120 | 537 | 870 | 826 | 35 | 3101 | 227 | 0 | 0 | 188 |
+
+（pandoc 行是 `-t gfm-raw_html`。体积和其他工具基本持平：多了语言标注和 toc，省了表格填充。源 XHTML 估算约 404k token，纯文本层面各工具只省约 30%，真正的收益是可以按章读。）
+
+过程中修掉的 bug：
+- pandoc 对没有 class 的代码块输出缩进式代码块 → 统一补 `text`，保持围栏。
+- 用 `<section id>` 包住标题的书，链接会映射到前一个标题 → id 在「以标题开头的 Div」上时挂到后面的标题。
+- pandoc 3.8 的 id 命名从 `file.xhtml#frag` 改成 `file.xhtml_frag`，而链接仍写 `#file.xhtml#frag` → 统一 canon（第一个 `#` 换成 `_`）。
+- pandoc 3.8 的 gfm 默认 `tex_math_gfm`（`` $`x`$ `` 和 ```` ```math ````）→ 检测到该扩展时显式关掉。
+- pandoc 3.8 会给表格标题输出 `{#id}` → 清掉 Table/Figure 的 attr。
+
+公式只用一个自造的 MathML 小样本验证过（行内、`$$` 积分、矩阵、正文里的 `$5` 被转义），真实公式书还没测。
+
+## 2. The Practice of Programming（第二轮）
+
+源：calibre 从 Kindle 格式转出，370 个 html。没有任何 `<h1>`–`<h6>` 和 `<pre>`；标题是加粗的 `<p>`；代码是 `<p>` 里一行行 `<tt>` 加 `<br>`，缩进全是不间断空格；坏代码行首有 `?` 标记；每段代码前有 “Click here to view code image” 链接，指向书末 355 个纯图片页；粗体斜体是 `<span class="bold|italic">`；导航（NCX）有 106 个条目。
+
+第一版 skill 在这本书上：toc 0、代码块 0，和裸 pandoc 一样，没有优势。改进：
+1. `promote_headings()`：用 NCX 把导航目标段落提升为标题 → 104/106（缺 Title Page、Copyright Page）。
+2. Lua `code_para`：每行都以 `<tt>` 开头的段落 → 代码块，NBSP 还原、去公共缩进、保留 `?` 标记；行内允许夹斜体等（伪代码里的占位符）。
+3. 指向纯图片页的链接整个删除（不解压图片时）。
+4. `bold` / `italic` class → 强调；只含一个引用块的引用块压平。
+
+| file | bytes | est_tok | toc | headings | fences | lang | nbsp | inline | links | dead | html | images |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| bfb.md | 657175 | 182548 | 371 | 382 | 0 | 0 | 0 | 0 | 481 | 39 | 1 | 384 |
+| markitdown.md | 767173 | 213103 | 0 | 0 | 0 | 0 | 24519 | 0 | 2857 | 2857 | 1 | 384 |
+| pandoc.md | 785903 | 218306 | 0 | 0 | 0 | 0 | 24536 | 5369 | 2857 | 2857 | 2 | 385 |
+| skill.md | 648702 | 180195 | 104 | 104 | 453 | 0 | 475 | 2364 | 1187 | 0 | 0 | 0 |
+
+（bfb 的 toc 371 里有 353 条是同名的 “The Practice of Programming” 图片页；它的 headings 计数包含没进代码块的 `# 注释`。我们剩下的 475 个 NBSP 在版权页等正文里，不在代码中。）
+
+这一轮的改动让 Pro Git 的输出逐字节不变；两本书在 pandoc 3.1.3 和 3.8 上都通过回归。
+
+## 3. Learning Go 第 2 版（第三轮，2026-10-08）
+
+源：O'Reilly HTMLBook，16 章 + 序言 + 索引。`<section data-type="chapter|sect1|sect2|sect3">` 嵌套，但章和 sect1 的标题都是 `<h1>`（sect2 是 `<h2>`，sect3 是 `<h3>`）；代码是 `<pre data-type="programlisting" data-code-language="go">`（618 个有语言，199 个是 shell 输出没有）；提示框是 `<div data-type="note|tip|warning">` 加 `<h6>Note</h6>`；侧栏是 `<aside data-type="sidebar"><div class="sidebar"><h1>…`；例子和插图的标题是 `<h5>` / `<h6>`；书末索引有约 3000 个指向 indexterm 锚点的链接。
+
+改之前 skill 在这本书上的问题：
+- 代码语言 13/827：pandoc 把 `data-code-language` 变成属性 `code-language`，脚本只看 class。
+- 层级拍平：章和 sect1 都是 1 级，目录 326 条、混在一起。
+- 770 个死链：提示框里的 `###### Note`、侧栏标题被 pass 1 当成节，索引锚点挂到了 “Note” 上；而这些标题最终在引用块里（`> ###### Note`），slug 计数和正文对不上。
+- 侧栏变成两层引用（`> >`）；“Example 2-1.” 之类的标题占了 52 个 5 级标题。
+
+改进：
+1. CodeBlock 先看 `data-code-language` / `code-language` / `data-lang` / `lang` 属性 → 628/827。
+2. pass 0 `relevel`：按 section 类容器（class `section` 或 `data-type`/`epub:type` 为 chapter、sect1… 等）的嵌套深度定级别。第一版直接覆盖级别，Pro Git 的 sect1（`<h2>`，外面没有可计数的章容器）被升成 1 级 → 改成只降不升。
+3. 提示框 / 侧栏 / 例子 / 插图（按 class、`data-type`、`epub:type` 识别）在 pass 1 里整体跳过，内部 id 归到外层节；raw `<aside>` 对之间的标题同样跳过。框内首个标题并入 `**Note:**` 标签（标签已包含标题文字时直接丢掉），例子/插图标题改成粗体段落。
+4. 后处理合并索引里的重复链接。
+
+| file | bytes | est_tok | toc | headings | fences | lang | nbsp | inline | links | dead | html | images |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| bfb.md | 977329 | 271481 | 25 | 637 | 823 | 0 | 0 | 4156 | 3171 | 240 | 0 | 2 |
+| markitdown.md | 1078502 | 299585 | 0 | 638 | 827 | 0 | 162 | 4154 | 3273 | 3272 | 6 | 20 |
+| pandoc.md | 1083642 | 301013 | 0 | 637 | 827 | 14 | 184 | 4164 | 3273 | 3273 | 28 | 23 |
+| skill.md（改前） | 1115024 | 309730 | 326 | 473 | 827 | 13 | 192 | 4164 | 3263 | 770 | 0 | 17 |
+| skill.md（改后） | 1098368 | 305103 | 195 | 363 | 827 | 628 | 208 | 4164 | 2974 | 0 | 0 | 17 |
+
+（headings 比 baseline 少是有意的：187 个提示框标题和 52 个例子标题不再是标题。toc 195 条 = 章 + sect1，层级 1/2/3/4 分别是 26/171/155/13 个标题。体积比 pandoc 多 1.4%，主要是 toc；索引从 224 KB 降到 184 KB。）
+
+对 Pro Git 的影响：正文只少了 19 处 `> ## 标题`——`<aside title="Note: X">` 里重复的 X 标题，toc、链接不变。TPOP 手头没有，没能重跑；它没有 `<section>`、提示框也不是这些 class，预计不受影响，但 golden 行未经本轮验证。三本书中可得的两本在 pandoc 3.1.3 和 3.8 上都通过 `check.py` 和回归。
+
+## 4. Introduction to Algorithms 第 4 版 + TPOP 复测（第四轮，2026-10-08）
+
+TPOP 拿到了（sha256 与 golden 一致）：第三轮的改动对它逐字节无影响。
+
+CLRS 源：35 章 + 8 个 Part + 附录，没有任何 `<h1>`–`<h6>`（只有 3 个 `<h2>`）；NCX 257 项，三级：Part → 章（指向文件本身，无 `#frag`）→ 节（`<p class="level1" id="h1-N">`）；章文件开头是 `<a id="p17"/>` 和空的 `<p class="line-c"/>`，然后才是章标题段落；伪代码是两三列的表格，第一列是行号，代码缩进只靠 class `p2`–`p7`（`margin-left: 40–140pt; text-indent: -20pt`）；公式全是 `<img alt="art">`，没有 MathML；正文和标题里大量不间断空格（“2.1&nbsp;&nbsp;&nbsp;&nbsp;Insertion sort”）。
+
+改之前 skill 在 CLRS 上的问题：
+- 章标题没被提升（无 frag 的导航只看紧跟 `<body>` 的第一个 `<p>`，被锚点和空 `<p/>` 挡住）→ toc 只有 22 条，其中 8 条是同名的 “Introduction”。
+- 伪代码表格变成管道表格，缩进全丢；CLRS 的伪代码没有 end，缩进就是块结构。
+- 28438 个不间断空格；更糟的是标题 slug 里带着 NBSP（`#134    deletion`），这种链接在 Markdown 里不是合法链接，metrics 也没把它们算进 links（所以 dead 显示 0，其实是坏的）。Learning Go 也有 13 个这样的隐藏坏链（`[if](#if-  )`）。
+
+改进：
+1. 导航只指向文件时，在开头前 3 个有文字的段落里找标题（跳过自闭合的 `<p/>`）→ headings_from_nav 157 → 207。
+2. `listing_tables()` 预处理：第一列是连续行号的 2–3 列表格 → `<pre>`；缩进 = `margin-left` + `text-indent`（第一版只看 margin-left，级差算成 40pt，p3、p4 缩成同一级）。172 张表全部是伪代码，逐个看过没有误判。
+3. Lua 先把 Str 里的 NBSP 换成空格；slug 去掉首尾空白；后处理合并标题里的连续空格。
+
+| file | bytes | est_tok | toc | headings | fences | lang | nbsp | inline | links | dead | html | images |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| bfb.md | 2904381 | 806772 | 56 | 56 | 0 | 0 | 0 | 0 | 1718 | 41 | 0 | 1987 |
+| markitdown.md | 3007376 | 835382 | 0 | 0 | 0 | 0 | 5457 | 0 | 7435 | 7435 | 0 | 1987 |
+| pandoc.md | 3210662 | 891850 | 0 | 0 | 0 | 0 | 6464 | 0 | 7435 | 7435 | 0 | 1988 |
+| skill.md（改前） | 3082828 | 856341 | 22 | 157 | 0 | 0 | 28438 | 0 | 778 | 0* | 0 | 1987 |
+| skill.md（改后） | 3018581 | 838494 | 72 | 207 | 172 | 0 | 0 | 0 | 5921 | 0 | 0 | 1955 |
+
+（* 改前大部分链接因 slug 含 NBSP 没被计入。toc 72 = Part + 章 + Part 导言；节是 3 级标题（`--toc-depth 3` 可以收进 toc）；更细的 “2.3.2 …” 小标题不在导航里，仍是粗体段落。1955 张图几乎都是 `alt="art"` 的公式图片，无法还原。）
+
+对其他书：Pro Git、TPOP 只有 NBSP → 空格（TPOP nbsp 475 → 0）；Learning Go 另外修好了 13 个 `#if` 链接。四本书在 pandoc 3.1.3 和 3.8 上都通过 `check.py` 和回归（3.8 下 CLRS 少 27 张管道表格，是 pandoc 本身的差异）。
+
+## 5. 占位符、console、脚注、按句断行（第五轮，2026-10-09）
+
+按上一轮「已知缺陷」的讨论做了四件事（按内容猜 TPOP 代码语言不做：误判代价大于收益）：
+
+1. 无 alt 图片：不解压时，插图留成 `[图: 文件名]` 占位符；纯图片页（所在 spine 文件没有文字）和 pandoc 放在最前面的封面仍丢弃。Lua 先用 topdown walk 给每张图记下所在文件。报告里 `images_dropped` 的含义随之变成「丢弃的纯图片页和封面」，新增 `images_placeholder`。
+2. 未标语言的代码块以 `$ ` 开头时记为 `console`（Learning Go 的 shell 示例），其余仍是 `text`。
+3. 脚注：`<sup><a href="#n1">1</a></sup>` 或 `<a><sup>1</sup></a>`，编号是 1–3 位数字、单个小写字母或 `* † ‡ § ¶`，目标在别的块里，且目标块链回引用所在块或以同一编号开头 → 把目标块移出正文，引用换成 `pandoc.Note`；pandoc 加 `--reference-location=section`，定义写在所在章节末尾。`x<sup>2</sup>`、上标形式的章节链接等不满足条件的保持原样。
+4. 按句子断行（semantic line breaks）：`. ! ?` 后接空格和大写/引号/非 ASCII 字符，或 `。！？` 后（可带收尾引号括号）断开。不断的地方：行内代码、公式、链接、脚注引用内部；下一行会开启新块（`#`、`-`、`1.`、`>`、`|` 等）；缩写（`Mr.`、`e.g.` …）之后；下一行以 `*` / `_` 开头（否则行首的收尾 `**` 不再闭合强调，Pro Git 里第一版就出了 3 处）。引用块和列表项的续行保留 `>` 前缀 / 缩进。拿不准就不断 —— 宁漏不错。
+
+不按体积自动拆分：四本书都在 18 万–84 万 token，任何阈值都会把它们全拆开，而单文件 + toc 行号本来就是为按行读取设计的。真正的问题是 `--wrap=none` 让一段成一行，长行会被 Read 截断 —— 按句断行解决的正是这个。
+
+验证：
+- 合成 epub（`<a><sup>` 脚注、`<a id>` / `<div id>` 脚注、`x<sup>2</sup>` 和上标章节链接两个诱饵、带图注的无 alt 插图、纯图片页、`$ ` 块 / 纯输出块 / `language-go` 块）：两个脚注转成 `[^1]` `[^2]`，诱饵不动，插图 → `[图: fig1.gif]`，纯图片页丢弃，只有 `$ ` 块变 `console`。
+- Pro Git（pandoc 3.1.3）：把改前改后的输出都用 `gfm+footnotes+east_asian_line_breaks` 读回 AST，把 SoftBreak 视同 Space 后 4253 个块逐一相同；15747 → 18774 行，最长行 1107 → 592 字符，超过 300 字符的行 698 → 28（剩下的是表格、标题和没有句末标点的长段）。`check.py` 通过。
+- TPOP、Learning Go、CLRS 这轮手头没有；pandoc 3.8 也没有。golden 只更新了 progit 3.1.3，其余七行需要拿到书后在两个 pandoc 版本上复跑、看 diff、再 `--update`。
+
+## 6. Absolute OpenBSD 第 2 版（第六轮，2026-10-09）
+
+No Starch 的 DocBook 导出：有 `<h1>`–`<h3>`，toc 200 条；745 个 `<pre>` 都没标语言；48 个脚注是 `<sup>[<a href="#ftn.X" epub:type="noteref">3</a>]</sup>`，注释放在每章末尾的 `<div class="footnotes">`（`<br/><hr/>` + 每条一个 `<div class="footnote">`，开头再重复一次 `<sup>[3]</sup>`）；每章第一段前有同一张装饰图（无 alt）。
+
+第五轮的改动在这本书上暴露的问题：
+- 24 个 `[图: …1616079.png]` 占位符全是那张章首装饰图 → 无 alt 图片同一个文件出现 3 次及以上就当装饰丢弃。改后占位符 0。
+- pandoc 自己就会把 `epub:type="noteref"` 转成脚注，但方括号和注释开头的编号留着：正文 `^(\[[^2]\])`、定义 `[^1]: ^(\[1\]) …`（main 上也是这样）→ 去掉只包着一个 Note 的上标，以及注释开头的编号。`noteref()` 也接受上标里方括号包着的链接，所以去掉 `epub:type` 后走我们自己的路径，输出逐字节相同（注释容器里剩下的 `<hr>` 一并删除）。
+
+结果：48 个脚注都是干净的 `[^n]`；71 个块（68 个 `$ ` + 3 个本来就是 `console` 风格）标成 `console`；19624 → 25756 行，最长行 1084 → 529，超过 300 字符的行 1257 → 17；读回 AST（SoftBreak≡Space）与 main 的输出相比，去掉占位符和脚注两处有意的改动后 7553 个块逐一相同。`check.py` 通过，golden 加了 openbsd（pandoc 3.1.3）。
+
+root 提示符：210 个块以 `# ` 开头，其中 208 个是 root 会话（`# cd /usr/src`、`# pfctl …`），2 个是配置文件注释（`# $OpenBSD: …`、`# Default …`）。规则：`# ` 后第一个词以小写字母、`.` 或 `/` 开头且不以 `:` 结尾就记为 `console`——208 个全中、0 误判；代价是脚本里以小写词开头的注释会误标。console 块 71 → 283（带缩进或标注编号的会话也算上了），逐个看过没有误判。
+
+## 7. Learning Go 复测（第七轮，2026-10-12）
+
+在 pandoc 3.1.3 和 3.8 上重跑 Learning Go 第 2 版，第五、六轮的改动在这本书上留下的问题：
+
+1. 排版 class 被当成代码语言：`<pre class="pagebreak-before">` 输出 ```` ```pagebreak-before ````、`no-indent` 同理（3.8 下 3 处）。兜底取第一个 class 当语言时，跳过含 `_` 或含 `break space indent small large width margin center left right float clear keep widow orphan wrap` 的 class。改后这 3 块按第五轮规则变成 `console` / `text`。
+2. 代码块首行空行：`<pre>` 后紧跟的换行按 HTML 规则不属于代码，pandoc 却保留了 → Lua 里去掉 `el.text` 开头的空白行。
+3. `<p id>` 脚注（上一轮的已知缺陷）：O'Reilly HTMLBook 的两个脚注是 `<p data-type="footnote" id="…">`，pandoc 丢掉 `<p>` 的 id，引用找不到目标。预处理 `footnote_anchors()`：凡是被上标链接（`<sup><a href=#x>` 或 `<a href=#x><sup>`）指向的 `<p id=x>`，把 id 挪到段首的 `<a id=x></a>`。第一版把注释自己的回链（`<sup><a href=#ref>1</a></sup>`）也当成引用，于是正文段落被当成注释移走 —— 引用所在块已经变成注释的，不再处理（`in_note`）。
+4. 脚注定义落在全书末尾：章节标题包在 `<section>` 生成的 Div 里，`--reference-location=section` 在顶层找不到章节结尾。gfm 本来就会丢掉 Div，所以在 strip 阶段直接展开 Div。OpenBSD 的 48 个脚注也因此从书末回到各节末尾（排序后与改前逐行相同，只有位置变化）。
+5. 按句断行拆开粗体图注：`**Figure 6-1. Storing two variables in memory**` 被断成两行，下一行开头的收尾 `**` 不再闭合（3.8 下 40 处 Figure / Example 标题）。`UNSPLIT` 加上粗体片段：`**` 后非空白开头、非空白结尾、不跨 `\*`。
+6. `--media`：图片链接是解压目录的绝对路径，换台机器或连同输出一起移动就断；pandoc 还把元数据封面再放一次（与 cover.html 重复）。改为相对输出文件所在目录的路径；`--media` 下文件名为空且同一 src 用了两次以上的封面副本丢弃。
+
+结果（Learning Go，pandoc 3.8）：脚注 2 个都是 `[^n]`，定义在所在章节末尾；827 个代码块无误标语言；Figure / Example 标题各占一行；`--media` 输出 21 张图、1 张封面，链接形如 `../img/assets/lgo2_0101.png`。正文中仍有用图片表示的 emoji（`sun.png` 等），无 alt，不处理。
+
+验证：Learning Go、Absolute OpenBSD 在 pandoc 3.1.3 / 3.8 上 `check.py` 都通过；OpenBSD 的 diff 只有脚注位置；golden 更新了这两本书的 4 行（openbsd 3.8 是新增）。Pro Git、TPOP、CLRS 这轮手头没有，第 4 条（展开 Div）可能改变它们的脚注位置，需要复跑、看 diff、再 `--update`。
+
+## 8. 不写 pandoc 版本要求（2026-10-20）
+
+SKILL.md、README、epub2md.py 文件头不再写 pandoc 的版本要求，开发规则也不再要求改动在 3.1.x 和 3.8 上都验证：哪个版本真的转坏了再写。回归只在本机装的 pandoc 上跑（现在是 3.8），golden 删掉 3.1.3 的 5 行。转换器没改，兼容旧版的分支（`canon()`、`tex_math_gfm` 检测）留着。
+
+## 9. PLAI：Google Docs 导出（第九轮，2026-10-20）
+
+Programming Languages: Application and Interpretation 3.2.5（plai.org 的 epub）由 Google Docs 导出、经 calibre 转换：没有 `<pre>` / `<code>` / `<tt>`，代码是 `<p class="c5"><span class="c32">一行代码</span></p>`，一行一个段落；行内代码是 `<span class="c23">`；两者只靠样式表里的 `font-family: "Roboto Mono", monospace` 区分。改前的输出：
+
+1. `code_blocks` 0：639 段代码变成按句断行的正文，缩进丢失。
+2. calibre 把每个 span 放在单独一行，span 之间的换行在 Markdown 里变成空格：“`Exp` s”、“features .”、“Version 3.2. 5 ,”、“across  features”。
+3. 14 个空 `<h1>`（Google Docs 的分页）变成只有 `#` 的行，也进了 toc。
+
+改动：
+
+1. 预处理 `monospace_code()`：`css_monospace()` 从样式表找出 `font-family` 是等宽字体（mono、Courier、Consolas、Menlo、Monaco、Inconsolata）的 class，只认纯 class 选择器（`.c32`、`span.c32`、`.a, .b`）。只含这些 span 的连续 `<p>` 合成一个 `<pre>`；其余段落里的等宽 span 改成 `<code>`，段落里已有 `<code>` / `<tt>` / `<kbd>` / `<samp>` / `<pre>` 的不动。
+2. 防误判：只处理没有 `<pre>` 的文件；等宽文字超过全书段落文字一半（正文用等宽字体的书）时整步跳过。按字符算，不按段落算：PLAI 一行代码一个段落，有的文件 61 段里 38 段是代码，按段落算会跳过；按字符算全书代码占 13%。
+3. 多余空格：只在段落里的 span 全是 Google Docs class（`c\d+`，calibre 改名的 `calibre\d+`）、且文字都在 span 里（链接可以在 span 里）时，去掉标签之间的换行。
+4. Lua pass 3 丢弃没有文字的标题。
+
+结果（PLAI，pandoc 3.1.3 和 3.8 输出逐字节相同）：`code_blocks` 0 → 639（`code_from_css` 657，`leftover_html_tags` 0），空标题 0，9718 行；与用一次性脚本手工预处理后的转换结果相比（都带 `--media`，都是 9720 行），除 front matter 的 `source:` 外 86 行不同，都只差链接前后的空格：手工脚本留下了 `[文字](…) ,`、`\[ [👉](…) \]`、`— [名字](…)` 里多余的空格，这一版没有，对照原始 HTML 是这一版对。本轮最初记的是“正文逐行相同”，那次比较的脚本把两边正文都删空了，结论不成立。代码块都是 `text`：`guess_lang` 不认识 Racket，书里也没标语言。
+
+验证：
+- `regress.sh`：Learning Go 不变；Absolute OpenBSD 只少了书末一个空的 `##`（第 4 条），已 `--update`；golden 加了 plai。改动时在 3.1.3 和 3.8 上都跑过，golden 按第八轮只留 3.8。
+- 另一份 Pro Git epub（不是 golden 里那份）在 3.1.3 / 3.8 上改前改后逐字节相同，`code_from_css` 0。
+- `check.py`：PLAI、OpenBSD、Pro Git、Learning Go 都通过。
+- 有其他 class 的 span、span 外有文字的段落不去换行；有等宽 span 而书里已有 `<pre>` 的文件不动。
+- TPOP、CLRS、golden 里的 Pro Git 这轮手头没有，需要复跑。
+
+## 10. PLAI：表格和嵌套列表（第十轮，2026-10-21）
+
+第九轮之后 PLAI 还有两处坏掉，都是 Google Docs 导出的通病：
+
+1. 两张表格（“Surface Syntax | AST”、各语言 truthy/falsy 对照）变成字面的 `[TABLE]`。格子里是多个 `<p>`，预处理又把等宽段落合成了 `<pre>`；gfm 只把「每格一行」的表格写成管道表格，别的写成 HTML，`-raw_html` 下就成了 `[TABLE]`。
+2. 嵌套列表压平：Google Docs 把子项导出成紧挨着的另一个 `<ul class="c19">`，层级只在 `<li>` 的 class 上（`c20` `margin-left: 36pt`，`c35` 72pt）。输出是几个独立列表，中间隔着 pandoc 的 `&nbsp;` 分隔段落。这些列表项里的行内代码（`num`、`Exp`）也没变成 `` `num` ``，“`Exp` s” 一类空格也在：`monospace_code()` 只处理 `<p>`，`<li>` 直接装 span。
+
+改动：
+
+1. Lua `pipe_table()`：有格子不是一行（多段、代码块、列表、合并单元格）的表格，每格的几行用 `<br>` 连成一行（代码块每行一个行内代码，行首缩进换成不间断空格），合并单元格拆开；这样的表格没有表头时第一行当表头。本来就能写成管道表格的表格原样不动，所以别的书的表格输出不变。
+2. 预处理 `nest_lists()`：相邻（之间只有空白）、本身没有子列表的 `<ul>` / `<ol>`，列表项缩进有两级以上时合成一个嵌套列表；级别是 `css_margins()` 缩进值的排名，一项最多比上一项深一级。
+3. `monospace_code()` 对不含 `<p>` / 子列表的 `<li>` 也做段落那两步（去掉 span 之间的换行、等宽 span → `<code>`）；等宽 span 首尾的空格移到 `<code>` 外（“statement,` (/ 1 0)`” → “statement, `(/ 1 0)`”）。
+
+结果（PLAI，pandoc 3.8）：`[TABLE]` 2 → 0，`tables` 2 → 4，`nested_lists` 1（全书只有第 019 段这一处多级列表），9718 → 9724 行；其余差异都是列表项里多出的行内代码和去掉的多余空格（约 50 行），逐条看过。`check.py` 通过。
+
+验证：`regress.sh` 只有 plai，已 `--update`。Pro Git、Learning Go、OpenBSD、TPOP、CLRS 这轮手头没有：表格只改原来会成 `[TABLE]` 的；列表合并只在相邻平级列表的缩进 class 不同时发生；`<li>` 的行内代码只在按 CSS 识别等宽字体的书上做，预计不变，需要复跑确认。
+
+## 已知缺陷 / 下一步
+
+### 转换器的限制
+
+- 公式是图片的书（CLRS 的 `alt="art"`）只能保留图片引用；伪代码里的上下标（`c<sub>ij</sub>`）在代码块里变成 `cij`。
+- 用图片表示的 emoji / 符号（Learning Go 的 `sun.png`）没有 alt，只能保留图片或占位符。
+- 按句断行：中文句子之间的换行，用不带 `east_asian_line_breaks` 的渲染器看会多一个空格；以小写字母或数字开头的下一句不断；缩写表是手写的。
+- `# ` 开头的块按「后面是不是命令」判断 `console`，脚本里以小写词开头的注释（`# set up the jail`）会被误标。
+- 导航提升标题只处理 `<p>`；用 `<div>` 或 `<span>` 充当标题的书会漏掉。
+- 按 CSS 等宽字体识别的代码块没有语言（PLAI 的 Racket 都是 `text`）；只看 class 规则，`style=` 内联字体和 `<font face>` 不认。
+
+- 写不成管道表格的表格：合并单元格拆成单格，跨列的表格会错位；没有表头时第一行当表头是猜的。
+
+### 待验证
+
+- 第五至七轮、第九轮的改动在 Learning Go、Absolute OpenBSD 上复跑过，第九轮还有 PLAI；Pro Git、TPOP、CLRS 的 golden 需要复跑、看 diff、再 `--update`；第十轮的改动还要在 Learning Go、OpenBSD 上复跑。
+- 代码段落识别只抽查过若干处，没有逐个核对 TPOP 的 453 个块。
+- 公式转换需要一本真实的 MathML 书来验证。

@@ -9,6 +9,10 @@ It is sent only in the X-API-Key header and never printed. Standard library only
 Output: YAML front matter (title, source, pages, lines, toc of [line, level, title]), then the
 Markdown, with a `<!-- PDF page N -->` line (1-based PDF page) before each page. A JSON report goes
 to stderr.
+
+The Markdown is joined from Datalab's JSON blocks, so that each figure keeps only its image: Datalab
+writes its own description of every figure (not the book's caption, which is a separate block) and
+lists the figure's labels as loose lines. Page headers and footers are dropped.
 """
 from __future__ import annotations
 
@@ -28,8 +32,9 @@ API = "https://www.datalab.to/api/v1/convert"
 KEY_FILE = Path.home() / ".config" / "datalab" / "api-key"
 POLL_SECONDS, POLL_LIMIT = 3, 1200  # up to an hour
 
-# Marker's paginate delimiter: "{12}" followed by 48 dashes, on a line of its own; the number is the 0-based page.
-PAGE_RE = re.compile(r"^\{(\d+)\}-{48}\s*$", re.M)
+SKIP_BLOCKS = {"PageHeader", "PageFooter"}
+GROUP_BLOCKS = {"FigureGroup", "PictureGroup"}  # a figure with its caption; keep the caption
+FIGURE_BLOCKS = {"Figure", "Picture"}
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 FENCE_RE = re.compile(r"^(```|~~~)")
 IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)\)")
@@ -76,8 +81,8 @@ def request(url: str, key: str | None, data: bytes | None = None, ctype: str | N
 
 
 def convert(pdf: Path, key: str, mode: str, pages: str | None) -> dict:
-    # Image captions are written by a model, not taken from the book; leave them out.
-    fields = {"output_format": "markdown", "mode": mode, "paginate": "true", "disable_image_captions": "true"}
+    fields = {"output_format": "json", "include_markdown_in_chunks": "true", "mode": mode,
+              "disable_image_captions": "true"}
     if pages:
         fields["page_range"] = pages
     body, ctype = multipart(fields, pdf)
@@ -99,11 +104,27 @@ def convert(pdf: Path, key: str, mode: str, pages: str | None) -> dict:
     raise SystemExit(f"still processing after {POLL_SECONDS * POLL_LIMIT} s; poll {check} later")
 
 
-def build(markdown: str, *, title: str, source: str, images: dict[str, str], media: Path | None,
+def block_markdown(block: dict) -> list[str]:
+    kind = block["block_type"]
+    if kind in SKIP_BLOCKS:
+        return []
+    if kind in GROUP_BLOCKS and block.get("children"):
+        return [s for child in block["children"] for s in block_markdown(child)]
+    if kind in FIGURE_BLOCKS:
+        return [f"![]({name})" for name in block.get("images") or {}]
+    md = (block.get("markdown") or "").strip()
+    return [md] if md else []
+
+
+def build(doc: dict, *, title: str, source: str, images: dict[str, str], media: Path | None,
           out: Path) -> tuple[str, dict]:
-    """The output file and the report, from the API's paginated Markdown."""
-    body = PAGE_RE.sub(lambda m: f"<!-- PDF page {int(m.group(1)) + 1} -->", markdown.strip())
-    pages = len(PAGE_RE.findall(markdown))
+    """The output file and the report, from the API's JSON document (one child block per page)."""
+    parts = []
+    for page in doc["children"]:
+        parts.append(f"<!-- PDF page {int(page['id'].split('/')[2]) + 1} -->")  # id: /page/<0-based>/Page/...
+        parts += [s for block in page.get("children") or [] for s in block_markdown(block)]
+    body = "\n\n".join(parts)
+    pages = len(doc["children"])
 
     def image(m):
         name = Path(m.group(2)).name
@@ -150,7 +171,7 @@ def main(argv=None) -> int:
         args.media.mkdir(parents=True, exist_ok=True)
         for name, data in images.items():
             (args.media / Path(name).name).write_bytes(base64.b64decode(data))
-    text, report = build(res.get("markdown") or "", title=args.pdf.stem, source=args.pdf.name,
+    text, report = build(res.get("json") or {"children": []}, title=args.pdf.stem, source=args.pdf.name,
                          images=images, media=args.media, out=args.output)
     args.output.write_text(text, encoding="utf-8")
     meta = res.get("metadata") or {}
